@@ -9,6 +9,7 @@ import {
   Coffee,
   Compass,
   Heart,
+  LoaderCircle,
   MapPin,
   MessageCircle,
   Music,
@@ -25,7 +26,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 type Profile = {
   id: string;
@@ -169,10 +171,65 @@ const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
 
 export default function Home() {
+  const router = useRouter();
+  const [accessState, setAccessState] = useState<"checking" | "ready" | "error">(
+    "checking",
+  );
+  const [accessError, setAccessError] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
   const [activeFocus, setActiveFocus] = useState<FocusMode>("Deep talk");
   const [selectedId, setSelectedId] = useState(profiles[0].id);
   const [savedIds, setSavedIds] = useState<string[]>(["aya"]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkOnboarding() {
+      try {
+        const response = await fetch("/api/onboarding", {
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+          },
+        });
+
+        if (response.redirected) {
+          window.location.assign(response.url);
+          return;
+        }
+
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Unable to verify onboarding.");
+        }
+
+        if (!payload?.completed) {
+          router.replace("/onboarding");
+          return;
+        }
+
+        if (isMounted) {
+          setAccessState("ready");
+        }
+      } catch (error) {
+        if (isMounted) {
+          setAccessError(
+            error instanceof Error
+              ? error.message
+              : "Unable to verify onboarding.",
+          );
+          setAccessState("error");
+        }
+      }
+    }
+
+    checkOnboarding();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const visibleProfiles = useMemo(() => {
     if (activeFilter === "All") {
@@ -193,6 +250,14 @@ export default function Home() {
         ? currentIds.filter((id) => id !== profileId)
         : [...currentIds, profileId],
     );
+  }
+
+  if (accessState === "checking") {
+    return <DiscoveryAccessState />;
+  }
+
+  if (accessState === "error") {
+    return <DiscoveryAccessState error={accessError} />;
   }
 
   return (
@@ -564,6 +629,40 @@ export default function Home() {
         </aside>
       </div>
       </main>
+  );
+}
+
+function DiscoveryAccessState({ error }: { error?: string }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f6f7f1] px-4 text-[#17201b]">
+      <section className="w-full max-w-md rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#17251f] text-white">
+            <LoaderCircle className={error ? "" : "animate-spin"} size={20} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-[#607265]">
+              {error ? "Discovery is paused" : "Checking onboarding"}
+            </p>
+            <h1 className="mt-1 text-xl font-semibold">
+              {error ? "Profile setup needs attention" : "Preparing Tribe"}
+            </h1>
+          </div>
+        </div>
+        {error ? (
+          <>
+            <p className="mt-4 text-sm leading-6 text-[#34443a]">{error}</p>
+            <button
+              className="mt-5 flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+              onClick={() => window.location.reload()}
+              type="button"
+            >
+              Try again
+            </button>
+          </>
+        ) : null}
+      </section>
+    </main>
   );
 }
 

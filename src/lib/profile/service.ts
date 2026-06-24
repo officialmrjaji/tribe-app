@@ -24,6 +24,7 @@ type ProfileRecord = {
   discoverable: boolean;
   display_name: string | null;
   id: string;
+  onboarding_completed_at: string | null;
   region: string | null;
   social_pace: string | null;
   temperament_summary: string | null;
