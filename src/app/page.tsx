@@ -5,7 +5,6 @@ import {
   BookOpen,
   CalendarDays,
   Check,
-  ChevronRight,
   Coffee,
   Compass,
   Heart,
@@ -14,144 +13,22 @@ import {
   MessageCircle,
   Music,
   Palette,
-  Plus,
   Search,
-  Send,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Star,
+  UserRound,
   Users,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-
-type Profile = {
-  id: string;
-  name: string;
-  age: number;
-  city: string;
-  image: string;
-  match: number;
-  archetype: string;
-  temperament: string;
-  pace: string;
-  availability: string;
-  signal: string;
-  bio: string;
-  traits: string[];
-  circles: string[];
-  prompts: string[];
-  values: string[];
-  axes: {
-    depth: number;
-    energy: number;
-    curiosity: number;
-  };
-  accent: string;
-};
-
-const profiles: Profile[] = [
-  {
-    id: "aya",
-    name: "Aya",
-    age: 29,
-    city: "Austin",
-    image: "/avatars/aya.png",
-    match: 96,
-    archetype: "Creative Cartographer",
-    temperament: "Warm, precise, open-ended",
-    pace: "Slow-burn",
-    availability: "2 nights this week",
-    signal: "Looks for people who make ordinary plans feel intentional.",
-    bio: "Design researcher, jazz learner, weekend map-maker. Prefers grounded conversations with room for strange questions.",
-    traits: ["Creative", "Reflective", "Local"],
-    circles: ["Live sketching", "Tiny dinner clubs", "Neighborhood walks"],
-    prompts: [
-      "What changed your mind recently?",
-      "Which third place feels like yours?",
-      "What do you notice that most people miss?",
-    ],
-    values: ["presence", "craft", "mutual curiosity"],
-    axes: { depth: 94, energy: 62, curiosity: 91 },
-    accent: "bg-[#f6c66f]",
-  },
-  {
-    id: "milo",
-    name: "Milo",
-    age: 33,
-    city: "Denver",
-    image: "/avatars/milo.png",
-    match: 91,
-    archetype: "Grounded Instigator",
-    temperament: "Playful, steady, candid",
-    pace: "Plan-forward",
-    availability: "Saturday afternoon",
-    signal: "Turns shared interests into low-pressure rituals.",
-    bio: "Climber, soup person, amateur facilitator. Collects questions that make groups feel less performative.",
-    traits: ["Grounded", "Social", "Local"],
-    circles: ["Skill swaps", "Climbing mornings", "Community kitchens"],
-    prompts: [
-      "What is a friendship ritual you want more of?",
-      "Where do you feel useful lately?",
-      "What small plan would you repeat monthly?",
-    ],
-    values: ["reliability", "good humor", "reciprocity"],
-    axes: { depth: 83, energy: 78, curiosity: 77 },
-    accent: "bg-[#94c973]",
-  },
-  {
-    id: "nora",
-    name: "Nora",
-    age: 31,
-    city: "Portland",
-    image: "/avatars/nora.png",
-    match: 89,
-    archetype: "Quiet Catalyst",
-    temperament: "Observant, gentle, decisive",
-    pace: "Unhurried",
-    availability: "Weeknight coffee",
-    signal: "Enjoys people with soft confidence and uncommon taste.",
-    bio: "Bookstore events lead, ambient music fan, volunteer mediator. Likes conversations that become practical kindness.",
-    traits: ["Reflective", "Curious", "Grounded"],
-    circles: ["Silent reading", "Ambient sets", "Repair cafes"],
-    prompts: [
-      "What kind of silence feels comfortable?",
-      "What do your favorite people have in common?",
-      "Which local project deserves more attention?",
-    ],
-    values: ["patience", "taste", "repair"],
-    axes: { depth: 92, energy: 48, curiosity: 84 },
-    accent: "bg-[#8ac5c1]",
-  },
-  {
-    id: "jules",
-    name: "Jules",
-    age: 27,
-    city: "Chicago",
-    image: "/avatars/jules.png",
-    match: 86,
-    archetype: "Kinetic Connector",
-    temperament: "Bright, generous, direct",
-    pace: "Spontaneous",
-    availability: "Tonight or Sunday",
-    signal: "Builds momentum without making people perform.",
-    bio: "Pop-up host, drummer, bike commuter. Best around people who can jump from jokes to meaning without fuss.",
-    traits: ["Creative", "Social", "Curious"],
-    circles: ["Open decks", "Food pop-ups", "Bike hangs"],
-    prompts: [
-      "What plan would you say yes to with one hour notice?",
-      "Which song explains your week?",
-      "What makes a group feel alive to you?",
-    ],
-    values: ["momentum", "play", "hospitality"],
-    axes: { depth: 76, energy: 93, curiosity: 82 },
-    accent: "bg-[#ef8f7a]",
-  },
-];
+import type { DiscoveryProfile } from "@/lib/discovery/service";
 
 const focusModes = ["Deep talk", "Soft plans", "New circle"] as const;
 type FocusMode = (typeof focusModes)[number];
@@ -176,17 +53,22 @@ export default function Home() {
     "checking",
   );
   const [accessError, setAccessError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
   const [activeFocus, setActiveFocus] = useState<FocusMode>("Deep talk");
-  const [selectedId, setSelectedId] = useState(profiles[0].id);
-  const [savedIds, setSavedIds] = useState<string[]>(["aya"]);
+  const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingActionProfileId, setPendingActionProfileId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function checkOnboarding() {
+    async function loadDiscovery() {
       try {
-        const response = await fetch("/api/onboarding", {
+        const response = await fetch("/api/discover", {
           cache: "no-store",
           headers: {
             Accept: "application/json",
@@ -200,31 +82,33 @@ export default function Home() {
 
         const payload = await response.json().catch(() => null);
 
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Unable to verify onboarding.");
-        }
-
-        if (!payload?.completed) {
-          router.replace("/onboarding");
+        if (response.status === 409 && payload?.redirectTo) {
+          router.replace(payload.redirectTo);
           return;
         }
 
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Unable to load discovery.");
+        }
+
         if (isMounted) {
+          const nextProfiles = (payload?.profiles ?? []) as DiscoveryProfile[];
+          setProfiles(nextProfiles);
+          setSavedIds(payload?.savedProfileIds ?? []);
+          setSelectedId(nextProfiles[0]?.id ?? null);
           setAccessState("ready");
         }
       } catch (error) {
         if (isMounted) {
           setAccessError(
-            error instanceof Error
-              ? error.message
-              : "Unable to verify onboarding.",
+            error instanceof Error ? error.message : "Unable to load discovery.",
           );
           setAccessState("error");
         }
       }
     }
 
-    checkOnboarding();
+    loadDiscovery();
 
     return () => {
       isMounted = false;
@@ -237,19 +121,87 @@ export default function Home() {
     }
 
     return profiles.filter((profile) => profile.traits.includes(activeFilter));
-  }, [activeFilter]);
+  }, [activeFilter, profiles]);
 
   const selectedProfile =
-    profiles.find((profile) => profile.id === selectedId) ?? profiles[0];
+    profiles.find((profile) => profile.id === selectedId) ??
+    visibleProfiles[0] ??
+    profiles[0] ??
+    null;
 
   const promptIndex = focusModes.indexOf(activeFocus);
 
-  function toggleSaved(profileId: string) {
-    setSavedIds((currentIds) =>
-      currentIds.includes(profileId)
-        ? currentIds.filter((id) => id !== profileId)
-        : [...currentIds, profileId],
-    );
+  async function saveProfile(profileId: string) {
+    if (savedIds.includes(profileId)) {
+      return;
+    }
+
+    setPendingActionProfileId(profileId);
+    setActionError("");
+
+    try {
+      const response = await fetch("/api/profile/save", {
+        body: JSON.stringify({ profileId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Profile could not be saved.");
+      }
+
+      setSavedIds((currentIds) =>
+        currentIds.includes(profileId) ? currentIds : [...currentIds, profileId],
+      );
+      setProfiles((currentProfiles) =>
+        currentProfiles.map((profile) =>
+          profile.id === profileId ? { ...profile, isSaved: true } : profile,
+        ),
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Profile could not be saved.",
+      );
+    } finally {
+      setPendingActionProfileId(null);
+    }
+  }
+
+  async function passProfile(profileId: string) {
+    setPendingActionProfileId(profileId);
+    setActionError("");
+
+    try {
+      const response = await fetch("/api/profile/pass", {
+        body: JSON.stringify({ profileId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Profile could not be passed.");
+      }
+
+      const nextProfiles = profiles.filter((profile) => profile.id !== profileId);
+      setProfiles(nextProfiles);
+      setSavedIds((currentIds) => currentIds.filter((id) => id !== profileId));
+
+      if (selectedId === profileId) {
+        setSelectedId(nextProfiles[0]?.id ?? null);
+      }
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Profile could not be passed.",
+      );
+    } finally {
+      setPendingActionProfileId(null);
+    }
   }
 
   if (accessState === "checking") {
@@ -338,13 +290,13 @@ export default function Home() {
                   type="search"
                 />
               </label>
-              <button
+              <Link
                 className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-                type="button"
+                href="/profile/edit"
               >
-                <Plus size={17} />
-                New Signal
-              </button>
+                <UserRound size={17} />
+                Edit Profile
+              </Link>
             </div>
           </header>
 
@@ -386,249 +338,346 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {visibleProfiles.map((profile) => {
-              const isSelected = profile.id === selectedProfile.id;
-              const isSaved = savedIds.includes(profile.id);
-
-              return (
-                <article
-                  key={profile.id}
-                  className={cx(
-                    "rounded-lg border bg-white p-4 shadow-sm transition",
-                    isSelected
-                      ? "border-[#17251f] shadow-md"
-                      : "border-[#d8ded1] hover:border-[#9dad9f]",
-                  )}
-                >
-                  <button
-                    className="block w-full text-left"
-                    onClick={() => setSelectedId(profile.id)}
-                    type="button"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Image
-                        alt={`${profile.name} avatar`}
-                        className="h-16 w-16 shrink-0 rounded-md object-cover"
-                        height={64}
-                        src={profile.image}
-                        width={64}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="truncate text-lg font-semibold">
-                              {profile.name}, {profile.age}
-                            </h3>
-                            <p className="mt-1 flex items-center gap-1 text-sm text-[#607265]">
-                              <MapPin size={14} />
-                              {profile.city}
-                            </p>
-                          </div>
-                          <span
-                            className={cx(
-                              "flex h-10 w-12 shrink-0 items-center justify-center rounded-md text-sm font-bold text-[#17201b]",
-                              profile.accent,
-                            )}
-                          >
-                            {profile.match}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm font-medium text-[#34443a]">
-                          {profile.archetype}
-                        </p>
-                      </div>
-                    </div>
-
-                    <p className="mt-4 min-h-12 text-sm leading-6 text-[#4e5e54]">
-                      {profile.signal}
-                    </p>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {profile.traits.map((trait) => (
-                        <span
-                          key={trait}
-                          className="rounded-md border border-[#d8ded1] bg-[#f6f7f1] px-2.5 py-1 text-xs font-semibold text-[#34443a]"
-                        >
-                          {trait}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-
-                  <div className="mt-4 flex items-center gap-2 border-t border-[#e2e6dc] pt-3">
-                    <button
-                      className={cx(
-                        "flex h-10 flex-1 items-center justify-center gap-2 rounded-md text-sm font-semibold transition",
-                        isSaved
-                          ? "bg-[#ef8f7a] text-[#17201b]"
-                          : "bg-[#edf2e9] text-[#34443a] hover:bg-[#e2eadc]",
-                      )}
-                      onClick={() => toggleSaved(profile.id)}
-                      type="button"
-                    >
-                      {isSaved ? <Check size={16} /> : <Heart size={16} />}
-                      {isSaved ? "Saved" : "Save"}
-                    </button>
-                    <button
-                      className="flex h-10 w-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white text-[#34443a] transition hover:bg-[#f3f0e6]"
-                      onClick={() => setSelectedId(profile.id)}
-                      type="button"
-                      aria-label={`Open ${profile.name}`}
-                    >
-                      <ChevronRight size={18} />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <aside className="border-t border-[#d8ded1] bg-white px-4 py-5 sm:px-6 lg:border-l lg:border-t-0">
-          <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 shadow-sm">
-            <div className="flex items-start gap-3">
-              <Image
-                alt={`${selectedProfile.name} avatar`}
-                className="h-20 w-20 rounded-md object-cover"
-                height={80}
-                src={selectedProfile.image}
-                width={80}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-[#607265]">
-                  Selected signal
-                </p>
-                <h2 className="mt-1 text-xl font-semibold">
-                  {selectedProfile.name}, {selectedProfile.age}
-                </h2>
-                <p className="mt-1 text-sm text-[#607265]">
-                  {selectedProfile.temperament}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-4 text-sm leading-6 text-[#34443a]">
-              {selectedProfile.bio}
+          {actionError ? (
+            <p className="mt-4 rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]">
+              {actionError}
             </p>
+          ) : null}
 
-            <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
-              <div>
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-                  <Sparkles size={14} />
-                  Pace
-                </p>
-                <p className="mt-1 text-sm font-semibold">
-                  {selectedProfile.pace}
-                </p>
-              </div>
-              <div>
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-                  <CalendarDays size={14} />
-                  Open
-                </p>
-                <p className="mt-1 text-sm font-semibold">
-                  {selectedProfile.availability}
-                </p>
-              </div>
-            </div>
+          {profiles.length === 0 ? (
+            <EmptyDiscovery />
+          ) : (
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleProfiles.length === 0 ? (
+                <div className="rounded-lg border border-[#d8ded1] bg-white p-5 text-sm leading-6 text-[#34443a] shadow-sm md:col-span-2 xl:col-span-3">
+                  No recommendations match this filter yet.
+                </div>
+              ) : null}
 
-            <div className="mt-4 space-y-3">
-              {axisMetrics.map((metric) => {
-                const Icon = metric.icon;
-                const value = selectedProfile.axes[metric.key];
+              {visibleProfiles.map((profile) => {
+                const isSelected = profile.id === selectedProfile?.id;
+                const isSaved = savedIds.includes(profile.id) || profile.isSaved;
+                const isPending = pendingActionProfileId === profile.id;
 
                 return (
-                <div key={metric.label}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2 font-semibold">
-                      <Icon size={15} />
-                      {metric.label}
-                    </span>
-                    <span>{value}%</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-md bg-[#e2e6dc]">
-                    <div
-                      className="h-2 rounded-md bg-[#17251f]"
-                      style={{ width: `${value}%` }}
-                    />
-                  </div>
-                </div>
+                  <article
+                    key={profile.id}
+                    className={cx(
+                      "rounded-lg border bg-white p-4 shadow-sm transition",
+                      isSelected
+                        ? "border-[#17251f] shadow-md"
+                        : "border-[#d8ded1] hover:border-[#9dad9f]",
+                    )}
+                  >
+                    <button
+                      className="block w-full text-left"
+                      onClick={() => setSelectedId(profile.id)}
+                      type="button"
+                    >
+                      <div className="flex items-start gap-3">
+                        <Image
+                          alt={`${profile.name} avatar`}
+                          className="h-16 w-16 shrink-0 rounded-md object-cover"
+                          height={64}
+                          src={profile.image}
+                          width={64}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h3 className="truncate text-lg font-semibold">
+                                {profile.name}
+                                {profile.age ? `, ${profile.age}` : ""}
+                              </h3>
+                              <p className="mt-1 flex items-center gap-1 text-sm text-[#607265]">
+                                <MapPin size={14} />
+                                {profile.city}
+                              </p>
+                            </div>
+                            <span
+                              className={cx(
+                                "flex h-10 w-12 shrink-0 items-center justify-center rounded-md text-sm font-bold text-[#17201b]",
+                                profile.accent,
+                              )}
+                            >
+                              {profile.match}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-[#34443a]">
+                            {profile.archetype}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="mt-4 min-h-12 text-sm leading-6 text-[#4e5e54]">
+                        {profile.signal}
+                      </p>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {profile.traits.map((trait) => (
+                          <span
+                            key={trait}
+                            className="rounded-md border border-[#d8ded1] bg-[#f6f7f1] px-2.5 py-1 text-xs font-semibold text-[#34443a]"
+                          >
+                            {trait}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+
+                    <div className="mt-4 flex items-center gap-2 border-t border-[#e2e6dc] pt-3">
+                      <button
+                        className={cx(
+                          "flex h-10 flex-1 items-center justify-center gap-2 rounded-md text-sm font-semibold transition disabled:opacity-60",
+                          isSaved
+                            ? "bg-[#ef8f7a] text-[#17201b]"
+                            : "bg-[#edf2e9] text-[#34443a] hover:bg-[#e2eadc]",
+                        )}
+                        disabled={isPending || isSaved}
+                        onClick={() => saveProfile(profile.id)}
+                        type="button"
+                      >
+                        {isPending ? (
+                          <LoaderCircle className="animate-spin" size={16} />
+                        ) : isSaved ? (
+                          <Check size={16} />
+                        ) : (
+                          <Heart size={16} />
+                        )}
+                        {isSaved ? "Saved" : "Save"}
+                      </button>
+                      <button
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
+                        disabled={isPending}
+                        onClick={() => passProfile(profile.id)}
+                        type="button"
+                        aria-label={`Pass ${profile.name}`}
+                      >
+                        {isPending ? (
+                          <LoaderCircle className="animate-spin" size={18} />
+                        ) : (
+                          <X size={18} />
+                        )}
+                      </button>
+                    </div>
+                  </article>
                 );
               })}
             </div>
+          )}
+        </section>
 
-            <div className="mt-5">
-              <p className="text-sm font-semibold text-[#607265]">
-                Values in common
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedProfile.values.map((value) => (
-                  <span
-                    key={value}
-                    className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
-                  >
-                    {value}
-                  </span>
-                ))}
-              </div>
+        <aside className="border-t border-[#d8ded1] bg-white px-4 py-5 sm:px-6 lg:border-l lg:border-t-0">
+          {selectedProfile ? (
+            <SelectedProfilePanel
+              activeFocus={activeFocus}
+              isPending={pendingActionProfileId === selectedProfile.id}
+              isSaved={
+                savedIds.includes(selectedProfile.id) || selectedProfile.isSaved
+              }
+              onPass={() => passProfile(selectedProfile.id)}
+              onSave={() => saveProfile(selectedProfile.id)}
+              profile={selectedProfile}
+              promptIndex={promptIndex}
+            />
+          ) : (
+            <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 text-sm leading-6 text-[#34443a] shadow-sm">
+              Complete onboarding and make sure other members have discoverable
+              profiles to see recommendations here.
             </div>
-
-            <div className="mt-5">
-              <p className="text-sm font-semibold text-[#607265]">
-                Circle overlap
-              </p>
-              <div className="mt-3 space-y-2">
-                {selectedProfile.circles.map((circle, index) => {
-                  const Icon = circleIcons[index] ?? Users;
-
-                  return (
-                    <div
-                      key={circle}
-                      className="flex min-h-10 items-center justify-between border-b border-[#e2e6dc] pb-2 text-sm last:border-b-0 last:pb-0"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon size={16} />
-                        {circle}
-                      </span>
-                      <ShieldCheck size={16} className="text-[#587d62]" />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <p className="text-sm font-semibold text-[#607265]">
-                Prompt for {activeFocus.toLowerCase()}
-              </p>
-              <div className="mt-2 rounded-md border border-[#d8ded1] bg-white p-3">
-                <p className="text-sm leading-6 text-[#34443a]">
-                  {selectedProfile.prompts[promptIndex]}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid grid-cols-[1fr_44px] gap-2">
-              <button
-                className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-                type="button"
-              >
-                <MessageCircle size={17} />
-                Start Thread
-              </button>
-              <button
-                className="flex h-11 items-center justify-center rounded-md bg-[#f6c66f] text-[#17201b] transition hover:bg-[#edb654]"
-                type="button"
-                aria-label="Send introduction"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-          </div>
+          )}
         </aside>
       </div>
-      </main>
+    </main>
+  );
+}
+
+function SelectedProfilePanel({
+  activeFocus,
+  isPending,
+  isSaved,
+  onPass,
+  onSave,
+  profile,
+  promptIndex,
+}: {
+  activeFocus: FocusMode;
+  isPending: boolean;
+  isSaved: boolean;
+  onPass: () => void;
+  onSave: () => void;
+  profile: DiscoveryProfile;
+  promptIndex: number;
+}) {
+  return (
+    <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <Image
+          alt={`${profile.name} avatar`}
+          className="h-20 w-20 rounded-md object-cover"
+          height={80}
+          src={profile.image}
+          width={80}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#607265]">
+            Selected signal
+          </p>
+          <h2 className="mt-1 text-xl font-semibold">
+            {profile.name}
+            {profile.age ? `, ${profile.age}` : ""}
+          </h2>
+          <p className="mt-1 text-sm text-[#607265]">{profile.temperament}</p>
+        </div>
+      </div>
+
+      <p className="mt-4 text-sm leading-6 text-[#34443a]">{profile.bio}</p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
+            <Sparkles size={14} />
+            Pace
+          </p>
+          <p className="mt-1 text-sm font-semibold">{profile.pace}</p>
+        </div>
+        <div>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
+            <CalendarDays size={14} />
+            Open
+          </p>
+          <p className="mt-1 text-sm font-semibold">{profile.availability}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {axisMetrics.map((metric) => {
+          const Icon = metric.icon;
+          const value = profile.axes[metric.key];
+
+          return (
+            <div key={metric.label}>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 font-semibold">
+                  <Icon size={15} />
+                  {metric.label}
+                </span>
+                <span>{value}%</span>
+              </div>
+              <div className="mt-2 h-2 rounded-md bg-[#e2e6dc]">
+                <div
+                  className="h-2 rounded-md bg-[#17251f]"
+                  style={{ width: `${value}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">
+          Values in common
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {profile.values.map((value) => (
+            <span
+              key={value}
+              className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
+            >
+              {value}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">Circle overlap</p>
+        <div className="mt-3 space-y-2">
+          {profile.circles.map((circle, index) => {
+            const Icon = circleIcons[index] ?? Users;
+
+            return (
+              <div
+                key={circle}
+                className="flex min-h-10 items-center justify-between border-b border-[#e2e6dc] pb-2 text-sm last:border-b-0 last:pb-0"
+              >
+                <span className="flex items-center gap-2">
+                  <Icon size={16} />
+                  {circle}
+                </span>
+                <ShieldCheck size={16} className="text-[#587d62]" />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">
+          Prompt for {activeFocus.toLowerCase()}
+        </p>
+        <div className="mt-2 rounded-md border border-[#d8ded1] bg-white p-3">
+          <p className="text-sm leading-6 text-[#34443a]">
+            {profile.prompts[promptIndex] ?? profile.prompts[0]}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-[1fr_44px] gap-2">
+        <button
+          className={cx(
+            "flex h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition disabled:opacity-60",
+            isSaved
+              ? "bg-[#ef8f7a] text-[#17201b]"
+              : "bg-[#17251f] text-white hover:bg-[#253b32]",
+          )}
+          disabled={isPending || isSaved}
+          onClick={onSave}
+          type="button"
+        >
+          {isPending ? (
+            <LoaderCircle className="animate-spin" size={17} />
+          ) : isSaved ? (
+            <Check size={17} />
+          ) : (
+            <Heart size={17} />
+          )}
+          {isSaved ? "Saved" : "Save Profile"}
+        </button>
+        <button
+          className="flex h-11 items-center justify-center rounded-md bg-[#f6c66f] text-[#17201b] transition hover:bg-[#edb654] disabled:opacity-60"
+          disabled={isPending}
+          onClick={onPass}
+          type="button"
+          aria-label={`Pass ${profile.name}`}
+        >
+          {isPending ? (
+            <LoaderCircle className="animate-spin" size={17} />
+          ) : (
+            <X size={17} />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmptyDiscovery() {
+  return (
+    <section className="mt-5 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
+      <p className="text-sm font-semibold text-[#607265]">
+        No recommendations yet
+      </p>
+      <h3 className="mt-1 text-xl font-semibold">
+        Discovery will fill in as members complete profiles.
+      </h3>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
+        The mock profiles are gone. Tribe is now reading from Supabase and will
+        hide your own profile, passed profiles, and blocked profiles from this
+        view.
+      </p>
+    </section>
   );
 }
 
@@ -642,10 +691,10 @@ function DiscoveryAccessState({ error }: { error?: string }) {
           </span>
           <div>
             <p className="text-sm font-semibold text-[#607265]">
-              {error ? "Discovery is paused" : "Checking onboarding"}
+              {error ? "Discovery is paused" : "Checking recommendations"}
             </p>
             <h1 className="mt-1 text-xl font-semibold">
-              {error ? "Profile setup needs attention" : "Preparing Tribe"}
+              {error ? "Discovery needs attention" : "Preparing Tribe"}
             </h1>
           </div>
         </div>
@@ -670,9 +719,9 @@ function NavButton({
   item,
 }: {
   item: {
-    label: string;
-    icon: LucideIcon;
     active: boolean;
+    icon: LucideIcon;
+    label: string;
   };
 }) {
   const Icon = item.icon;
