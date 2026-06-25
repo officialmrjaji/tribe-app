@@ -400,6 +400,31 @@ export async function undoLastPassedProfile(ownedProfile: OwnedProfile) {
   return { profileId: lastPass.passed_profile_id, undone: true };
 }
 
+export async function restorePassedProfile(
+  ownedProfile: OwnedProfile,
+  profileId: string,
+) {
+  const target = await getTargetProfile(ownedProfile, profileId);
+  const supabase = createSupabaseAdminClient();
+
+  const { data, error } = await supabase
+    .from("passed_profiles")
+    .delete()
+    .eq("viewer_user_id", ownedProfile.account.id)
+    .eq("passed_user_id", target.user_id)
+    .select("passed_profile_id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    profileId: target.id,
+    restored: Boolean(data),
+  };
+}
+
 export async function blockDiscoveryProfile(
   ownedProfile: OwnedProfile,
   profileId: string,

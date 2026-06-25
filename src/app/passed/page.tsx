@@ -26,6 +26,7 @@ export default async function PassedProfilesPage() {
       eyebrow="Discovery history"
       icon={X}
       profiles={passedProfiles.profiles}
+      restorePassed
       title="Passed profiles"
     />
   );
