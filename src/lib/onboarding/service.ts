@@ -136,15 +136,30 @@ export async function saveOnboardingResponse(
     throw preferencesError;
   }
 
+  const profileUpdates: {
+    archetype: string;
+    discoverable?: boolean;
+    onboarding_completed_at: string;
+    social_pace: string;
+    temperament_summary: string;
+    updated_at: string;
+    visibility?: "discoverable";
+  } = {
+    archetype: personalityTypeLabels[input.personalityType],
+    onboarding_completed_at: now,
+    social_pace: availabilityLabels[input.availability],
+    temperament_summary: conversationStyleLabels[input.conversationStyle],
+    updated_at: now,
+  };
+
+  if (!ownedProfile.profile.onboarding_completed_at) {
+    profileUpdates.discoverable = true;
+    profileUpdates.visibility = "discoverable";
+  }
+
   const { error: profileError } = await supabase
     .from("profiles")
-    .update({
-      archetype: personalityTypeLabels[input.personalityType],
-      onboarding_completed_at: now,
-      social_pace: availabilityLabels[input.availability],
-      temperament_summary: conversationStyleLabels[input.conversationStyle],
-      updated_at: now,
-    })
+    .update(profileUpdates)
     .eq("id", ownedProfile.profile.id)
     .eq("clerk_user_id", ownedProfile.account.clerk_user_id);
 

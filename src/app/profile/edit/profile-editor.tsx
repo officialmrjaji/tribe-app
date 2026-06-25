@@ -37,6 +37,25 @@ export default function ProfileEditor({ profile }: { profile: EditableProfile })
     setError("");
   }
 
+  function updateVisibility(visibility: ProfileDraft["visibility"]) {
+    updateDraft({
+      discoverable: visibility === "private" ? false : draft.discoverable,
+      visibility,
+    });
+  }
+
+  function toggleDiscoverable() {
+    const discoverable = !draft.discoverable;
+
+    updateDraft({
+      discoverable,
+      visibility:
+        discoverable && draft.visibility === "private"
+          ? "discoverable"
+          : draft.visibility,
+    });
+  }
+
   async function saveProfile() {
     setIsSaving(true);
     setMessage("");
@@ -185,29 +204,32 @@ export default function ProfileEditor({ profile }: { profile: EditableProfile })
               <select
                 className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#17201b] outline-none transition focus:border-[#17251f]"
                 onChange={(event) =>
-                  updateDraft({
-                    visibility: event.target.value as ProfileDraft["visibility"],
-                  })
+                  updateVisibility(event.target.value as ProfileDraft["visibility"])
                 }
                 value={draft.visibility}
               >
-                <option value="private">Private</option>
-                <option value="members">Members</option>
                 <option value="discoverable">Discoverable</option>
+                <option value="members">Members only</option>
+                <option value="private">Private</option>
               </select>
             </label>
 
-            <label className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#cbd4c6] bg-white px-3 py-2 text-sm font-semibold">
-              <span>Show in discovery</span>
-              <input
-                checked={draft.discoverable}
-                className="h-5 w-5 accent-[#17251f]"
-                onChange={(event) =>
-                  updateDraft({ discoverable: event.target.checked })
-                }
-                type="checkbox"
-              />
-            </label>
+            <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[#cbd4c6] bg-white px-3 py-2 text-sm font-semibold">
+              <span>Discoverable</span>
+              <button
+                aria-pressed={draft.discoverable}
+                className={[
+                  "flex h-8 min-w-20 items-center justify-center rounded-md px-3 text-xs font-bold transition",
+                  draft.discoverable
+                    ? "bg-[#17251f] text-white"
+                    : "border border-[#cbd4c6] bg-[#f6f7f1] text-[#34443a]",
+                ].join(" ")}
+                onClick={toggleDiscoverable}
+                type="button"
+              >
+                {draft.discoverable ? "On" : "Off"}
+              </button>
+            </div>
 
             {message ? (
               <p className="rounded-md border border-[#94c973] bg-white px-3 py-2 text-sm font-semibold text-[#2f5f36]">

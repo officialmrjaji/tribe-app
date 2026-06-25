@@ -143,7 +143,8 @@ export async function getDiscoveryRecommendations(
       !passedProfileIds.has(profile.id) &&
       !blockedUserIds.has(profile.user_id) &&
       profile.onboarding_completed_at &&
-      (profile.discoverable || profile.visibility !== "private"),
+      profile.discoverable &&
+      profile.visibility !== "private",
   );
 
   if (candidates.length === 0) {
@@ -337,6 +338,8 @@ async function fetchCandidateProfiles(ownedProfile: OwnedProfile) {
     .select("*")
     .neq("user_id", ownedProfile.account.id)
     .not("onboarding_completed_at", "is", null)
+    .eq("discoverable", true)
+    .neq("visibility", "private")
     .limit(100);
 
   if (error) {
