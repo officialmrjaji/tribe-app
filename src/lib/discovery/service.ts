@@ -40,6 +40,12 @@ type InteractionProfile = {
   user_id: string;
 };
 
+type ProfileReference = {
+  created_at: string;
+  id: string;
+  user_id: string;
+};
+
 export type DiscoveryProfile = {
   accent: string;
   age: number | null;
@@ -60,11 +66,16 @@ export type DiscoveryProfile = {
   name: string;
   pace: string;
   prompts: string[];
+  reasons: string[];
   signal: string;
   temperament: string;
   traits: string[];
   userId: string;
   values: string[];
+};
+
+export type DiscoveryCollectionProfile = DiscoveryProfile & {
+  actedAt: string;
 };
 
 export type DiscoveryResult =
@@ -77,6 +88,16 @@ export type DiscoveryResult =
       completed: true;
       profiles: DiscoveryProfile[];
       savedProfileIds: string[];
+    };
+
+export type DiscoveryCollectionResult =
+  | {
+      completed: false;
+      profiles: [];
+    }
+  | {
+      completed: true;
+      profiles: DiscoveryCollectionProfile[];
     };
 
 type Recommendation = {
@@ -203,6 +224,87 @@ export async function getDiscoveryRecommendations(
   };
 }
 
+export async function getSavedDiscoveryProfiles(
+  ownedProfile: OwnedProfile,
+): Promise<DiscoveryCollectionResult> {
+  const currentOnboarding = await getCompletedCurrentOnboarding(ownedProfile);
+
+  if (!currentOnboarding) {
+    return { completed: false, profiles: [] };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("saved_profiles")
+    .select("saved_profile_id, saved_user_id, created_at")
+    .eq("viewer_user_id", ownedProfile.account.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const references = ((data ?? []) as Array<{
+    created_at: string;
+    saved_profile_id: string;
+    saved_user_id: string;
+  }>).map((row) => ({
+    created_at: row.created_at,
+    id: row.saved_profile_id,
+    user_id: row.saved_user_id,
+  }));
+
+  const profiles = await buildInteractionCollection({
+    currentOnboarding,
+    isSaved: true,
+    ownedProfile,
+    references,
+  });
+
+  return { completed: true, profiles };
+}
+
+export async function getPassedDiscoveryProfiles(
+  ownedProfile: OwnedProfile,
+): Promise<DiscoveryCollectionResult> {
+  const currentOnboarding = await getCompletedCurrentOnboarding(ownedProfile);
+
+  if (!currentOnboarding) {
+    return { completed: false, profiles: [] };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("passed_profiles")
+    .select("passed_profile_id, passed_user_id, created_at")
+    .eq("viewer_user_id", ownedProfile.account.id)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const references = ((data ?? []) as Array<{
+    created_at: string;
+    passed_profile_id: string;
+    passed_user_id: string;
+  }>).map((row) => ({
+    created_at: row.created_at,
+    id: row.passed_profile_id,
+    user_id: row.passed_user_id,
+  }));
+
+  const profiles = await buildInteractionCollection({
+    currentOnboarding,
+    isSaved: false,
+    ownedProfile,
+    references,
+  });
+
+  return { completed: true, profiles };
+}
+
 export async function saveDiscoveryProfile(
   ownedProfile: OwnedProfile,
   profileId: string,
@@ -259,6 +361,43 @@ export async function passDiscoveryProfile(
     .eq("saved_user_id", target.user_id);
 
   return { passed: true, profileId: target.id };
+}
+
+export async function undoLastPassedProfile(ownedProfile: OwnedProfile) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("passed_profiles")
+    .select("passed_profile_id, passed_user_id")
+    .eq("viewer_user_id", ownedProfile.account.id)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const lastPass = data as {
+    passed_profile_id: string;
+    passed_user_id: string;
+  } | null;
+
+  if (!lastPass) {
+    return { profileId: null, undone: false };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("passed_profiles")
+    .delete()
+    .eq("viewer_user_id", ownedProfile.account.id)
+    .eq("passed_user_id", lastPass.passed_user_id);
+
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  return { profileId: lastPass.passed_profile_id, undone: true };
 }
 
 export async function blockDiscoveryProfile(
@@ -418,6 +557,100 @@ async function fetchBlockedViewer(viewerUserId: string) {
   return (data ?? []) as Array<{ blocker_user_id: string }>;
 }
 
+async function getCompletedCurrentOnboarding(ownedProfile: OwnedProfile) {
+  const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
+
+  if (!onboarding.completed) {
+    return null;
+  }
+
+  return getOnboardingByProfileId(ownedProfile.profile.id);
+}
+
+async function buildInteractionCollection({
+  currentOnboarding,
+  isSaved,
+  ownedProfile,
+  references,
+}: {
+  currentOnboarding: OnboardingRecord;
+  isSaved: boolean;
+  ownedProfile: OwnedProfile;
+  references: ProfileReference[];
+}) {
+  if (references.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const profileIds = references.map((reference) => reference.id);
+  const { data: profileRows, error: profileError } = await supabase
+    .from("profiles")
+    .select("*")
+    .in("id", profileIds)
+    .neq("user_id", ownedProfile.account.id)
+    .not("onboarding_completed_at", "is", null)
+    .neq("visibility", "private");
+
+  if (profileError) {
+    throw profileError;
+  }
+
+  const profiles = (profileRows ?? []) as ProfileRow[];
+
+  if (profiles.length === 0) {
+    return [];
+  }
+
+  const { data: onboardingRows, error: onboardingError } = await supabase
+    .from("onboarding_answers")
+    .select("*")
+    .in(
+      "profile_id",
+      profiles.map((profile) => profile.id),
+    )
+    .not("completed_at", "is", null);
+
+  if (onboardingError) {
+    throw onboardingError;
+  }
+
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const onboardingByProfileId = new Map(
+    ((onboardingRows ?? []) as OnboardingRecord[]).map((row) => [
+      row.profile_id,
+      row,
+    ]),
+  );
+
+  return references
+    .map((reference, index) => {
+      const candidate = profilesById.get(reference.id);
+      const candidateOnboarding = onboardingByProfileId.get(reference.id);
+
+      if (!candidate || !candidateOnboarding) {
+        return null;
+      }
+
+      const recommendation = buildRecommendation({
+        candidate,
+        candidateOnboarding,
+        currentOnboarding,
+        index,
+        isSaved,
+        viewerProfile: ownedProfile.profile as ProfileRow,
+      });
+
+      return {
+        ...recommendation.profile,
+        actedAt: reference.created_at,
+      };
+    })
+    .filter(
+      (profile): profile is DiscoveryCollectionProfile => profile !== null,
+    );
+}
+
 async function getTargetProfile(ownedProfile: OwnedProfile, profileId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -549,6 +782,7 @@ function buildRecommendation({
         "Compare a low-pressure plan that fits both of your schedules.",
         "Start with the shared interest that feels easiest.",
       ]).slice(0, 3),
+      reasons,
       signal: reasons[0] ?? candidateOnboarding.primary_goal,
       temperament:
         candidate.temperament_summary ??

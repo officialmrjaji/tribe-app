@@ -8,11 +8,12 @@ import {
   Coffee,
   Compass,
   Heart,
+  History,
   LoaderCircle,
   MapPin,
-  MessageCircle,
   Music,
   Palette,
+  RefreshCcw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -43,9 +44,28 @@ const axisMetrics = [
 ] as const;
 
 const circleIcons = [Palette, Coffee, Music] as const;
+const undoPassActionId = "__undo_last_pass__";
 
 const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
+
+type ApiErrorPayload = {
+  error?: string;
+  issues?: Array<{
+    message?: string;
+  }>;
+};
+
+function getActionFailureMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  const actionPayload = payload as ApiErrorPayload;
+  const firstIssue = actionPayload.issues?.[0]?.message;
+
+  return [actionPayload.error, firstIssue].filter(Boolean).join(" ") || fallback;
+}
 
 export default function Home() {
   const router = useRouter();
@@ -54,8 +74,11 @@ export default function Home() {
   );
   const [accessError, setAccessError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
   const [activeFocus, setActiveFocus] = useState<FocusMode>("Deep talk");
+  const [lastPassedProfile, setLastPassedProfile] =
+    useState<DiscoveryProfile | null>(null);
   const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,6 +153,7 @@ export default function Home() {
     null;
 
   const promptIndex = focusModes.indexOf(activeFocus);
+  const isUndoingLastPass = pendingActionProfileId === undoPassActionId;
 
   async function saveProfile(profileId: string) {
     if (savedIds.includes(profileId)) {
@@ -138,6 +162,7 @@ export default function Home() {
 
     setPendingActionProfileId(profileId);
     setActionError("");
+    setActionMessage("");
 
     try {
       const response = await fetch("/api/profile/save", {
@@ -150,8 +175,12 @@ export default function Home() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Profile could not be saved.");
+        throw new Error(
+          getActionFailureMessage(payload, "Profile could not be saved."),
+        );
       }
+
+      const savedProfile = profiles.find((profile) => profile.id === profileId);
 
       setSavedIds((currentIds) =>
         currentIds.includes(profileId) ? currentIds : [...currentIds, profileId],
@@ -160,6 +189,9 @@ export default function Home() {
         currentProfiles.map((profile) =>
           profile.id === profileId ? { ...profile, isSaved: true } : profile,
         ),
+      );
+      setActionMessage(
+        `${savedProfile?.name ?? "Profile"} was added to saved profiles.`,
       );
     } catch (error) {
       setActionError(
@@ -173,8 +205,10 @@ export default function Home() {
   async function passProfile(profileId: string) {
     setPendingActionProfileId(profileId);
     setActionError("");
+    setActionMessage("");
 
     try {
+      const passedProfile = profiles.find((profile) => profile.id === profileId);
       const response = await fetch("/api/profile/pass", {
         body: JSON.stringify({ profileId }),
         headers: {
@@ -185,12 +219,18 @@ export default function Home() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Profile could not be passed.");
+        throw new Error(
+          getActionFailureMessage(payload, "Profile could not be passed."),
+        );
       }
 
       const nextProfiles = profiles.filter((profile) => profile.id !== profileId);
       setProfiles(nextProfiles);
       setSavedIds((currentIds) => currentIds.filter((id) => id !== profileId));
+      setLastPassedProfile(passedProfile ?? null);
+      setActionMessage(
+        `${passedProfile?.name ?? "Profile"} was moved to passed profiles.`,
+      );
 
       if (selectedId === profileId) {
         setSelectedId(nextProfiles[0]?.id ?? null);
@@ -198,6 +238,47 @@ export default function Home() {
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Profile could not be passed.",
+      );
+    } finally {
+      setPendingActionProfileId(null);
+    }
+  }
+
+  async function undoLastPass() {
+    if (!lastPassedProfile) {
+      return;
+    }
+
+    setPendingActionProfileId(undoPassActionId);
+    setActionError("");
+    setActionMessage("");
+
+    try {
+      const response = await fetch("/api/profile/pass/undo", {
+        headers: {
+          Accept: "application/json",
+        },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getActionFailureMessage(payload, "Last pass could not be undone."),
+        );
+      }
+
+      setProfiles((currentProfiles) =>
+        currentProfiles.some((profile) => profile.id === lastPassedProfile.id)
+          ? currentProfiles
+          : [lastPassedProfile, ...currentProfiles],
+      );
+      setSelectedId(lastPassedProfile.id);
+      setActionMessage(`${lastPassedProfile.name} is back in discovery.`);
+      setLastPassedProfile(null);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Last pass could not be undone.",
       );
     } finally {
       setPendingActionProfileId(null);
@@ -233,10 +314,15 @@ export default function Home() {
 
           <nav className="mt-5 grid grid-cols-4 gap-2 lg:grid-cols-1">
             {[
-              { label: "Discover", icon: Compass, active: true },
-              { label: "Circles", icon: Users, active: false },
-              { label: "Inbox", icon: MessageCircle, active: false },
-              { label: "Rituals", icon: CalendarDays, active: false },
+              { label: "Discover", icon: Compass, href: "/", active: true },
+              { label: "Saved", icon: Heart, href: "/saved", active: false },
+              { label: "Passed", icon: History, href: "/passed", active: false },
+              {
+                label: "Profile",
+                icon: UserRound,
+                href: "/profile/edit",
+                active: false,
+              },
             ].map((item) => (
               <NavButton key={item.label} item={item} />
             ))}
@@ -291,6 +377,20 @@ export default function Home() {
                 />
               </label>
               <Link
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                href="/saved"
+              >
+                <Heart size={17} />
+                Saved
+              </Link>
+              <Link
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                href="/passed"
+              >
+                <History size={17} />
+                Passed
+              </Link>
+              <Link
                 className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
                 href="/profile/edit"
               >
@@ -339,18 +439,67 @@ export default function Home() {
           </div>
 
           {actionError ? (
-            <p className="mt-4 rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]">
-              {actionError}
-            </p>
+            <ActionNotice message={actionError} tone="error" />
+          ) : null}
+
+          {!actionError && actionMessage ? (
+            <ActionNotice message={actionMessage} tone="success" />
+          ) : null}
+
+          {lastPassedProfile ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-md border border-[#d8ded1] bg-white px-3 py-3 text-sm text-[#34443a] shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                <span className="font-semibold">{lastPassedProfile.name}</span>{" "}
+                was passed.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="flex h-9 items-center justify-center gap-2 rounded-md bg-[#17251f] px-3 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
+                  disabled={isUndoingLastPass}
+                  onClick={undoLastPass}
+                  type="button"
+                >
+                  {isUndoingLastPass ? (
+                    <LoaderCircle className="animate-spin" size={15} />
+                  ) : (
+                    <RefreshCcw size={15} />
+                  )}
+                  Undo pass
+                </button>
+                <Link
+                  className="flex h-9 items-center justify-center rounded-md border border-[#cbd4c6] px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                  href="/passed"
+                >
+                  Passed
+                </Link>
+              </div>
+            </div>
           ) : null}
 
           {profiles.length === 0 ? (
-            <EmptyDiscovery />
+            <EmptyDiscovery
+              isUndoing={isUndoingLastPass}
+              lastPassedProfile={lastPassedProfile}
+              onUndoPass={undoLastPass}
+            />
           ) : (
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visibleProfiles.length === 0 ? (
-                <div className="rounded-lg border border-[#d8ded1] bg-white p-5 text-sm leading-6 text-[#34443a] shadow-sm md:col-span-2 xl:col-span-3">
-                  No recommendations match this filter yet.
+                <div className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm md:col-span-2 xl:col-span-3">
+                  <p className="text-sm font-semibold text-[#607265]">
+                    No matches for this filter
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-[#34443a]">
+                    Try the full discovery queue, or check saved and passed
+                    profiles while more people complete onboarding.
+                  </p>
+                  <button
+                    className="mt-4 flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+                    onClick={() => setActiveFilter("All")}
+                    type="button"
+                  >
+                    Show all matches
+                  </button>
                 </div>
               ) : null}
 
@@ -412,6 +561,24 @@ export default function Home() {
                       <p className="mt-4 min-h-12 text-sm leading-6 text-[#4e5e54]">
                         {profile.signal}
                       </p>
+
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase text-[#607265]">
+                          Why this match
+                        </p>
+                        {profile.reasons.slice(0, 2).map((reason) => (
+                          <p
+                            className="flex gap-2 rounded-md bg-[#fbfaf4] px-3 py-2 text-sm leading-5 text-[#34443a]"
+                            key={reason}
+                          >
+                            <ShieldCheck
+                              className="mt-0.5 shrink-0 text-[#587d62]"
+                              size={15}
+                            />
+                            {reason}
+                          </p>
+                        ))}
+                      </div>
 
                       <div className="mt-4 flex flex-wrap gap-2">
                         {profile.traits.map((trait) => (
@@ -614,8 +781,23 @@ function SelectedProfilePanel({
       </div>
 
       <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">Match reasons</p>
+        <div className="mt-3 space-y-2">
+          {profile.reasons.slice(0, 4).map((reason) => (
+            <p
+              className="flex gap-2 rounded-md border border-[#e2e6dc] bg-white px-3 py-2 text-sm leading-5 text-[#34443a]"
+              key={reason}
+            >
+              <ShieldCheck className="mt-0.5 shrink-0 text-[#587d62]" size={15} />
+              {reason}
+            </p>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
         <p className="text-sm font-semibold text-[#607265]">
-          Prompt for {activeFocus.toLowerCase()}
+          Conversation opener for {activeFocus.toLowerCase()}
         </p>
         <div className="mt-2 rounded-md border border-[#d8ded1] bg-white p-3">
           <p className="text-sm leading-6 text-[#34443a]">
@@ -663,7 +845,36 @@ function SelectedProfilePanel({
   );
 }
 
-function EmptyDiscovery() {
+function ActionNotice({
+  message,
+  tone,
+}: {
+  message: string;
+  tone: "error" | "success";
+}) {
+  return (
+    <p
+      className={cx(
+        "mt-4 rounded-md border bg-white px-3 py-2 text-sm font-semibold",
+        tone === "error"
+          ? "border-[#ef8f7a] text-[#8a3325]"
+          : "border-[#94c973] text-[#2f5f36]",
+      )}
+    >
+      {message}
+    </p>
+  );
+}
+
+function EmptyDiscovery({
+  isUndoing,
+  lastPassedProfile,
+  onUndoPass,
+}: {
+  isUndoing: boolean;
+  lastPassedProfile: DiscoveryProfile | null;
+  onUndoPass: () => void;
+}) {
   return (
     <section className="mt-5 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
       <p className="text-sm font-semibold text-[#607265]">
@@ -677,11 +888,84 @@ function EmptyDiscovery() {
         hide your own profile, passed profiles, and blocked profiles from this
         view.
       </p>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        {lastPassedProfile ? (
+          <button
+            className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
+            disabled={isUndoing}
+            onClick={onUndoPass}
+            type="button"
+          >
+            {isUndoing ? (
+              <LoaderCircle className="animate-spin" size={16} />
+            ) : (
+              <RefreshCcw size={16} />
+            )}
+            Undo last pass
+          </button>
+        ) : null}
+        <Link
+          className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+          href="/passed"
+        >
+          View passed profiles
+        </Link>
+      </div>
     </section>
   );
 }
 
 function DiscoveryAccessState({ error }: { error?: string }) {
+  if (!error) {
+    return (
+      <main className="min-h-screen bg-[#f6f7f1] text-[#17201b]">
+        <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)_340px]">
+          <aside className="border-b border-[#d8ded1] bg-[#17251f] px-4 py-4 text-[#f7f4e9] lg:border-b-0 lg:border-r">
+            <div className="h-4 w-16 rounded-md bg-[#385046]" />
+            <div className="mt-3 h-7 w-32 rounded-md bg-[#385046]" />
+            <div className="mt-6 space-y-2">
+              {[1, 2, 3, 4].map((item) => (
+                <div className="h-11 rounded-md bg-[#22362e]" key={item} />
+              ))}
+            </div>
+          </aside>
+
+          <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8">
+            <div className="border-b border-[#d8ded1] pb-5">
+              <div className="h-4 w-44 rounded-md bg-[#d8ded1]" />
+              <div className="mt-3 h-8 max-w-xl rounded-md bg-[#d8ded1]" />
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((item) => (
+                <div
+                  className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm"
+                  key={item}
+                >
+                  <div className="flex gap-3">
+                    <div className="h-16 w-16 rounded-md bg-[#e2e6dc]" />
+                    <div className="flex-1">
+                      <div className="h-5 w-32 rounded-md bg-[#e2e6dc]" />
+                      <div className="mt-3 h-4 w-24 rounded-md bg-[#e2e6dc]" />
+                    </div>
+                  </div>
+                  <div className="mt-4 h-4 rounded-md bg-[#e2e6dc]" />
+                  <div className="mt-2 h-4 w-4/5 rounded-md bg-[#e2e6dc]" />
+                  <div className="mt-4 h-16 rounded-md bg-[#fbfaf4]" />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <aside className="border-t border-[#d8ded1] bg-white px-4 py-5 sm:px-6 lg:border-l lg:border-t-0">
+            <div className="h-20 rounded-md bg-[#e2e6dc]" />
+            <div className="mt-4 h-24 rounded-md bg-[#fbfaf4]" />
+            <div className="mt-4 h-40 rounded-md bg-[#fbfaf4]" />
+          </aside>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f6f7f1] px-4 text-[#17201b]">
       <section className="w-full max-w-md rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
@@ -719,25 +1003,26 @@ function NavButton({
   item,
 }: {
   item: {
-    active: boolean;
-    icon: LucideIcon;
-    label: string;
-  };
+      active: boolean;
+      href: string;
+      icon: LucideIcon;
+      label: string;
+    };
 }) {
   const Icon = item.icon;
 
   return (
-    <button
+    <Link
       className={cx(
         "flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition lg:justify-start",
         item.active
           ? "bg-[#f7f4e9] text-[#17251f]"
           : "text-[#cddbd4] hover:bg-[#22362e]",
       )}
-      type="button"
+      href={item.href}
     >
       <Icon size={17} />
       <span className="hidden sm:inline">{item.label}</span>
-    </button>
+    </Link>
   );
 }
