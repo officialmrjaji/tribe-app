@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import { uploadVoiceIntroduction } from "@/lib/profile/service";
+import {
+  ProfileMediaUploadError,
+  uploadVoiceIntroduction,
+} from "@/lib/profile/service";
+
+function isUploadedFile(value: FormDataEntryValue | null): value is File {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "arrayBuffer" in value &&
+    typeof value.arrayBuffer === "function" &&
+    "size" in value &&
+    typeof value.size === "number" &&
+    "type" in value &&
+    typeof value.type === "string"
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -13,13 +29,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const formData = await request.formData();
+    let formData: FormData;
+
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Voice upload must use multipart form data." },
+        { status: 400 },
+      );
+    }
+
     const file = formData.get("voice");
     const durationSeconds = Number(formData.get("durationSeconds"));
 
-    if (!(file instanceof File)) {
+    if (!isUploadedFile(file)) {
       return NextResponse.json(
-        { error: "Voice introduction audio is required." },
+        { error: "Choose a voice introduction audio file to upload." },
         { status: 400 },
       );
     }
@@ -41,8 +67,18 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
+    if (error instanceof ProfileMediaUploadError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     return NextResponse.json(
-      { error: "Unable to upload voice introduction." },
+      {
+        error:
+          "Unable to upload voice introduction. Check the Supabase profile-media bucket and try again.",
+      },
       { status: 500 },
     );
   }

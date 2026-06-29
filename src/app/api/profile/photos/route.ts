@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import { uploadProfilePhotos } from "@/lib/profile/service";
+import {
+  ProfileMediaUploadError,
+  uploadProfilePhotos,
+} from "@/lib/profile/service";
+
+function isUploadedFile(value: FormDataEntryValue): value is File {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "arrayBuffer" in value &&
+    typeof value.arrayBuffer === "function" &&
+    "size" in value &&
+    typeof value.size === "number" &&
+    "type" in value &&
+    typeof value.type === "string"
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -13,14 +29,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const formData = await request.formData();
-    const files = formData
-      .getAll("photos")
-      .filter((file): file is File => file instanceof File);
+    let formData: FormData;
+
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Photo upload must use multipart form data." },
+        { status: 400 },
+      );
+    }
+
+    const files = formData.getAll("photos").filter(isUploadedFile);
 
     if (files.length === 0) {
       return NextResponse.json(
-        { error: "At least one profile photo is required." },
+        { error: "Choose at least one profile photo to upload." },
         { status: 400 },
       );
     }
@@ -31,8 +55,18 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
+    if (error instanceof ProfileMediaUploadError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     return NextResponse.json(
-      { error: "Unable to upload profile photos." },
+      {
+        error:
+          "Unable to upload profile photos. Check the Supabase profile-media bucket and try again.",
+      },
       { status: 500 },
     );
   }

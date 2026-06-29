@@ -3,6 +3,41 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { ProfileInput } from "./schema";
 
 const profileMediaBucket = "profile-media";
+const profileMediaMaxBytes = 10 * 1024 * 1024;
+const profilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
+const profileVoiceMimeTypes = [
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/wav",
+  "audio/webm",
+] as const;
+const profileMediaMimeTypes = [
+  ...profilePhotoMimeTypes,
+  ...profileVoiceMimeTypes,
+] as const;
+const profilePhotoExtensions: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+const profileVoiceExtensions: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+  "audio/webm": "webm",
+};
+
+export class ProfileMediaUploadError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "ProfileMediaUploadError";
+    this.status = status;
+  }
+}
 
 type UserAccount = {
   clerk_user_id: string;
@@ -355,46 +390,38 @@ export async function uploadProfilePhotos(
   files: File[],
 ) {
   if (files.length === 0) {
-    return getProfileQuality(ownedProfile);
+    throw new ProfileMediaUploadError("At least one profile photo is required.");
   }
 
   const supabase = createSupabaseAdminClient();
+  await ensureProfileMediaBucket(supabase);
+
   const existingPhotos = await getProfilePhotos(ownedProfile.profile.id);
   const availableSlots = Math.max(0, 6 - existingPhotos.length);
   const uploads = files.slice(0, availableSlots);
 
   if (uploads.length === 0) {
-    return getProfileQuality(ownedProfile);
+    throw new ProfileMediaUploadError(
+      "You already have the maximum of 6 profile photos.",
+    );
   }
+
+  uploads.forEach(validateProfilePhotoFile);
 
   const insertedPhotos: ProfilePhoto[] = [];
 
   for (const [index, file] of uploads.entries()) {
-    if (!file.type.startsWith("image/")) {
-      throw new Error("Profile photos must be image files.");
-    }
-
-    const extension = getFileExtension(file.name, file.type);
-    const storagePath = `profiles/${ownedProfile.profile.id}/photos/${crypto.randomUUID()}.${extension}`;
-    const { error: uploadError } = await supabase.storage
-      .from(profileMediaBucket)
-      .upload(storagePath, file, {
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      throw uploadError;
-    }
-
-    const { data: publicUrl } = supabase.storage
-      .from(profileMediaBucket)
-      .getPublicUrl(storagePath);
+    const { publicUrl, storagePath } = await uploadProfileMediaObject({
+      file,
+      kind: "photos",
+      ownedProfile,
+      supabase,
+    });
     const isPrimary = existingPhotos.length === 0 && index === 0;
     const { data: photo, error: insertError } = await supabase
       .from("profile_photos")
       .insert({
-        image_url: publicUrl.publicUrl,
+        image_url: publicUrl,
         is_primary: isPrimary,
         profile_id: ownedProfile.profile.id,
         sort_order: existingPhotos.length + index,
@@ -404,20 +431,35 @@ export async function uploadProfilePhotos(
       .single();
 
     if (insertError) {
-      throw insertError;
+      await removeProfileMediaObjects(supabase, [storagePath]);
+      throw new ProfileMediaUploadError(
+        `Photo uploaded to storage, but the profile photo record could not be saved: ${getServiceErrorMessage(
+          insertError,
+        )}`,
+        500,
+      );
     }
 
     insertedPhotos.push(photo as ProfilePhoto);
   }
 
   if (!ownedProfile.profile.avatar_url && insertedPhotos[0]) {
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({
         avatar_url: insertedPhotos[0].image_url,
         updated_at: new Date().toISOString(),
       })
       .eq("id", ownedProfile.profile.id);
+
+    if (error) {
+      throw new ProfileMediaUploadError(
+        `Photos uploaded, but the primary profile image could not be updated: ${getServiceErrorMessage(
+          error,
+        )}`,
+        500,
+      );
+    }
   }
 
   return refreshProfileQuality(ownedProfile);
@@ -433,44 +475,48 @@ export async function uploadVoiceIntroduction({
   ownedProfile: OwnedProfile;
 }) {
   if (!file.type.startsWith("audio/")) {
-    throw new Error("Voice introduction must be an audio file.");
+    throw new ProfileMediaUploadError(
+      "Voice introduction must be an audio file.",
+    );
   }
 
   if (durationSeconds < 30 || durationSeconds > 60) {
-    throw new Error("Voice introduction must be between 30 and 60 seconds.");
+    throw new ProfileMediaUploadError(
+      "Voice introduction must be between 30 and 60 seconds.",
+    );
   }
+
+  validateVoiceIntroFile(file);
 
   const supabase = createSupabaseAdminClient();
-  const extension = getFileExtension(file.name, file.type);
-  const storagePath = `profiles/${ownedProfile.profile.id}/voice/${crypto.randomUUID()}.${extension}`;
-  const { error: uploadError } = await supabase.storage
-    .from(profileMediaBucket)
-    .upload(storagePath, file, {
-      contentType: file.type,
-      upsert: false,
-    });
+  await ensureProfileMediaBucket(supabase);
 
-  if (uploadError) {
-    throw uploadError;
-  }
-
-  const { data: publicUrl } = supabase.storage
-    .from(profileMediaBucket)
-    .getPublicUrl(storagePath);
+  const { publicUrl, storagePath } = await uploadProfileMediaObject({
+    file,
+    kind: "voice",
+    ownedProfile,
+    supabase,
+  });
   const { data: profile, error: updateError } = await supabase
     .from("profiles")
     .update({
       updated_at: new Date().toISOString(),
       voice_intro_duration_seconds: Math.round(durationSeconds),
       voice_intro_storage_path: storagePath,
-      voice_intro_url: publicUrl.publicUrl,
+      voice_intro_url: publicUrl,
     })
     .eq("id", ownedProfile.profile.id)
     .select("*")
     .single();
 
   if (updateError) {
-    throw updateError;
+    await removeProfileMediaObjects(supabase, [storagePath]);
+    throw new ProfileMediaUploadError(
+      `Voice file uploaded to storage, but the profile record could not be updated: ${getServiceErrorMessage(
+        updateError,
+      )}`,
+      500,
+    );
   }
 
   return getProfileQuality({
@@ -552,6 +598,202 @@ async function refreshProfileQuality(ownedProfile: OwnedProfile) {
     account: ownedProfile.account,
     profile: profile as ProfileRecord,
   });
+}
+
+async function ensureProfileMediaBucket(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+) {
+  const bucketOptions = {
+    allowedMimeTypes: [...profileMediaMimeTypes],
+    fileSizeLimit: profileMediaMaxBytes,
+    public: true,
+  };
+  const { data: bucket, error: readError } =
+    await supabase.storage.getBucket(profileMediaBucket);
+
+  if (readError) {
+    if (!isNotFoundError(readError)) {
+      throw new ProfileMediaUploadError(
+        `Could not verify the ${profileMediaBucket} Supabase bucket: ${getServiceErrorMessage(
+          readError,
+        )}`,
+        500,
+      );
+    }
+
+    const { error: createError } = await supabase.storage.createBucket(
+      profileMediaBucket,
+      bucketOptions,
+    );
+
+    if (createError && !isAlreadyExistsError(createError)) {
+      throw new ProfileMediaUploadError(
+        `The ${profileMediaBucket} Supabase bucket is missing and could not be created: ${getServiceErrorMessage(
+          createError,
+        )}`,
+        500,
+      );
+    }
+
+    return;
+  }
+
+  const bucketConfig = bucket as {
+    allowed_mime_types?: string[] | null;
+    file_size_limit?: number | string | null;
+    public?: boolean;
+  };
+  const configuredMimeTypes = new Set(bucketConfig.allowed_mime_types ?? []);
+  const shouldUpdateBucket =
+    bucketConfig.public !== true ||
+    Number(bucketConfig.file_size_limit ?? 0) !== profileMediaMaxBytes ||
+    profileMediaMimeTypes.some((mimeType) => !configuredMimeTypes.has(mimeType));
+
+  if (!shouldUpdateBucket) {
+    return;
+  }
+
+  const { error: updateError } = await supabase.storage.updateBucket(
+    profileMediaBucket,
+    bucketOptions,
+  );
+
+  if (updateError) {
+    throw new ProfileMediaUploadError(
+      `The ${profileMediaBucket} Supabase bucket exists but could not be configured for profile media: ${getServiceErrorMessage(
+        updateError,
+      )}`,
+      500,
+    );
+  }
+}
+
+async function uploadProfileMediaObject({
+  file,
+  kind,
+  ownedProfile,
+  supabase,
+}: {
+  file: File;
+  kind: "photos" | "voice";
+  ownedProfile: OwnedProfile;
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+}) {
+  const extension = getFileExtension(file.name, file.type, kind);
+  const storagePath = [
+    "users",
+    ownedProfile.account.id,
+    "profiles",
+    ownedProfile.profile.id,
+    kind,
+    `${crypto.randomUUID()}.${extension}`,
+  ].join("/");
+  let fileBody: ArrayBuffer;
+
+  try {
+    fileBody = await file.arrayBuffer();
+  } catch {
+    throw new ProfileMediaUploadError(
+      `Could not read the selected ${kind === "photos" ? "photo" : "voice intro"} file.`,
+    );
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from(profileMediaBucket)
+    .upload(storagePath, fileBody, {
+      cacheControl: "3600",
+      contentType: file.type,
+      metadata: {
+        kind,
+        owner_user_id: ownedProfile.account.id,
+        profile_id: ownedProfile.profile.id,
+      },
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ProfileMediaUploadError(
+      `Supabase storage upload failed for the ${kind === "photos" ? "photo" : "voice intro"}: ${getServiceErrorMessage(
+        uploadError,
+      )}`,
+      500,
+    );
+  }
+
+  const { data } = supabase.storage
+    .from(profileMediaBucket)
+    .getPublicUrl(storagePath);
+
+  if (!data.publicUrl) {
+    await removeProfileMediaObjects(supabase, [storagePath]);
+    throw new ProfileMediaUploadError(
+      `Supabase did not return a public URL for the uploaded ${kind === "photos" ? "photo" : "voice intro"}.`,
+      500,
+    );
+  }
+
+  return {
+    publicUrl: data.publicUrl,
+    storagePath,
+  };
+}
+
+async function removeProfileMediaObjects(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  paths: string[],
+) {
+  if (paths.length === 0) {
+    return;
+  }
+
+  await supabase.storage.from(profileMediaBucket).remove(paths);
+}
+
+function validateProfilePhotoFile(file: File) {
+  validateProfileMediaFile({
+    allowedMimeTypes: profilePhotoMimeTypes,
+    file,
+    label: "Profile photo",
+  });
+}
+
+function validateVoiceIntroFile(file: File) {
+  validateProfileMediaFile({
+    allowedMimeTypes: profileVoiceMimeTypes,
+    file,
+    label: "Voice introduction",
+  });
+}
+
+function validateProfileMediaFile({
+  allowedMimeTypes,
+  file,
+  label,
+}: {
+  allowedMimeTypes: readonly string[];
+  file: File;
+  label: string;
+}) {
+  if (!file.name && file.size === 0) {
+    throw new ProfileMediaUploadError(`${label} file is required.`);
+  }
+
+  if (file.size <= 0) {
+    throw new ProfileMediaUploadError(`${label} file is empty.`);
+  }
+
+  if (file.size > profileMediaMaxBytes) {
+    throw new ProfileMediaUploadError(
+      `${label} must be 10 MB or smaller.`,
+      413,
+    );
+  }
+
+  if (!allowedMimeTypes.includes(file.type as (typeof allowedMimeTypes)[number])) {
+    throw new ProfileMediaUploadError(
+      `${label} must use one of these formats: ${allowedMimeTypes.join(", ")}.`,
+    );
+  }
 }
 
 function buildProfileQuality(
@@ -643,7 +885,19 @@ async function updateProfileCompletion(profileId: string, completeness: number) 
   }
 }
 
-function getFileExtension(fileName: string, mimeType: string) {
+function getFileExtension(
+  fileName: string,
+  mimeType: string,
+  kind: "photos" | "voice",
+) {
+  const extensionByMimeType =
+    kind === "photos" ? profilePhotoExtensions : profileVoiceExtensions;
+  const mimeExtension = extensionByMimeType[mimeType];
+
+  if (mimeExtension) {
+    return mimeExtension;
+  }
+
   const explicitExtension = fileName.split(".").pop()?.toLowerCase();
 
   if (explicitExtension && /^[a-z0-9]+$/.test(explicitExtension)) {
@@ -653,4 +907,43 @@ function getFileExtension(fileName: string, mimeType: string) {
   const fallback = mimeType.split("/")[1]?.replace("jpeg", "jpg");
 
   return fallback || "bin";
+}
+
+function isNotFoundError(error: unknown) {
+  return (
+    getErrorStatus(error) === 404 ||
+    getServiceErrorMessage(error).toLowerCase().includes("not found")
+  );
+}
+
+function isAlreadyExistsError(error: unknown) {
+  const message = getServiceErrorMessage(error).toLowerCase();
+
+  return getErrorStatus(error) === 409 || message.includes("already exists");
+}
+
+function getErrorStatus(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const status = (error as { status?: unknown }).status;
+
+  return typeof status === "number" ? status : null;
+}
+
+function getServiceErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const maybeMessage = (error as { message?: unknown }).message;
+
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+  }
+
+  return "Unknown error";
 }
