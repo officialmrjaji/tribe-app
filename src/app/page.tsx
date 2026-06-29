@@ -11,6 +11,7 @@ import {
   History,
   LoaderCircle,
   MapPin,
+  MessageCircle,
   Mic,
   Music,
   Palette,
@@ -30,6 +31,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { NotificationBadge } from "@/components/notifications/notification-badge";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
 
 const focusModes = ["Deep talk", "Soft plans", "New circle"] as const;
@@ -313,19 +315,34 @@ export default function Home() {
               </p>
               <h1 className="mt-1 text-2xl font-semibold">Discovery</h1>
             </div>
-            <button
-              className="flex h-10 w-10 items-center justify-center rounded-md border border-[#385046] text-[#f7f4e9] transition hover:bg-[#22362e] lg:hidden"
+            <Link
+              className="relative flex h-10 w-10 items-center justify-center rounded-md border border-[#385046] text-[#f7f4e9] transition hover:bg-[#22362e] lg:hidden"
+              href="/notifications"
               aria-label="Notifications"
             >
               <Bell size={18} />
-            </button>
+              <NotificationBadge />
+            </Link>
           </div>
 
-          <nav className="mt-5 grid grid-cols-4 gap-2 lg:grid-cols-1">
+          <nav className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-1">
             {[
               { label: "Discover", icon: Compass, href: "/", active: true },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
               { label: "Passed", icon: History, href: "/passed", active: false },
+              {
+                label: "Messages",
+                icon: MessageCircle,
+                href: "/messages",
+                active: false,
+              },
+              {
+                label: "Alerts",
+                icon: Bell,
+                href: "/notifications",
+                active: false,
+                hasBadge: true,
+              },
               {
                 label: "Profile",
                 icon: UserRound,
@@ -387,6 +404,13 @@ export default function Home() {
               </label>
               <Link
                 className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                href="/messages"
+              >
+                <MessageCircle size={17} />
+                Messages
+              </Link>
+              <Link
+                className="relative flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
                 href="/saved"
               >
                 <Heart size={17} />
@@ -1135,6 +1159,7 @@ function NavButton({
       href: string;
       icon: LucideIcon;
       label: string;
+      hasBadge?: boolean;
     };
 }) {
   const Icon = item.icon;
@@ -1151,6 +1176,7 @@ function NavButton({
     >
       <Icon size={17} />
       <span className="hidden sm:inline">{item.label}</span>
+      {item.hasBadge ? <NotificationBadge /> : null}
     </Link>
   );
 }

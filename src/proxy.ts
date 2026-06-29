@@ -7,8 +7,13 @@ const isProtectedRoute = createRouteMatcher([
   "/profile(.*)",
   "/saved(.*)",
   "/passed(.*)",
+  "/messages(.*)",
+  "/notifications(.*)",
+  "/api/conversations(.*)",
   "/api/discover(.*)",
+  "/api/messages(.*)",
   "/api/me(.*)",
+  "/api/notifications(.*)",
   "/api/onboarding(.*)",
   "/api/profile(.*)",
 ]);

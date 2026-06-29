@@ -5,17 +5,20 @@ import {
   Heart,
   LoaderCircle,
   MapPin,
+  MessageCircle,
   RefreshCcw,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { DiscoveryCollectionProfile } from "@/lib/discovery/service";
 
 type ProfileCollectionGridProps = {
   accentLabel: string;
+  allowMessaging?: boolean;
   profiles: DiscoveryCollectionProfile[];
   restorePassed?: boolean;
 };
@@ -29,11 +32,16 @@ type ApiErrorPayload = {
 
 export function ProfileCollectionGrid({
   accentLabel,
+  allowMessaging = false,
   profiles,
   restorePassed = false,
 }: ProfileCollectionGridProps) {
+  const router = useRouter();
   const [visibleProfiles, setVisibleProfiles] = useState(profiles);
   const [restoringProfileId, setRestoringProfileId] = useState<string | null>(
+    null,
+  );
+  const [messagingProfileId, setMessagingProfileId] = useState<string | null>(
     null,
   );
   const [message, setMessage] = useState("");
@@ -74,6 +82,46 @@ export function ProfileCollectionGrid({
       );
     } finally {
       setRestoringProfileId(null);
+    }
+  }
+
+  async function startConversation(profile: DiscoveryCollectionProfile) {
+    setMessagingProfileId(profile.id);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await fetch("/api/conversations", {
+        body: JSON.stringify({ profileId: profile.id }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getActionFailureMessage(payload, "Conversation could not be started."),
+        );
+      }
+
+      const conversationId = payload?.conversation?.id;
+
+      if (!conversationId) {
+        throw new Error("Conversation could not be opened.");
+      }
+
+      setMessage(`Opening conversation with ${profile.name}.`);
+      router.push(`/messages/${conversationId}`);
+    } catch (conversationError) {
+      setError(
+        conversationError instanceof Error
+          ? conversationError.message
+          : "Conversation could not be started.",
+      );
+    } finally {
+      setMessagingProfileId(null);
     }
   }
 
@@ -215,6 +263,22 @@ export function ProfileCollectionGrid({
                     <RefreshCcw size={16} />
                   )}
                   Restore to discovery
+                </button>
+              ) : null}
+
+              {allowMessaging && !restorePassed ? (
+                <button
+                  className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
+                  disabled={messagingProfileId === profile.id}
+                  onClick={() => startConversation(profile)}
+                  type="button"
+                >
+                  {messagingProfileId === profile.id ? (
+                    <LoaderCircle className="animate-spin" size={16} />
+                  ) : (
+                    <MessageCircle size={16} />
+                  )}
+                  Message
                 </button>
               ) : null}
             </article>

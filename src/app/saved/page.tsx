@@ -25,6 +25,7 @@ export default async function SavedProfilesPage() {
       emptyTitle="No saved profiles yet."
       eyebrow="Discovery library"
       icon={Heart}
+      allowMessaging
       profiles={savedProfiles.profiles}
       title="Saved profiles"
     />

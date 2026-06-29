@@ -1,5 +1,11 @@
-import { ArrowLeft, type LucideIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  MessageCircle,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
+import { NotificationBadge } from "@/components/notifications/notification-badge";
 import type { DiscoveryCollectionProfile } from "@/lib/discovery/service";
 import { ProfileCollectionGrid } from "./profile-collection-grid";
 
@@ -10,6 +16,7 @@ type ProfileCollectionPageProps = {
   emptyTitle: string;
   eyebrow: string;
   icon: LucideIcon;
+  allowMessaging?: boolean;
   profiles: DiscoveryCollectionProfile[];
   restorePassed?: boolean;
   title: string;
@@ -22,6 +29,7 @@ export function ProfileCollectionPage({
   emptyTitle,
   eyebrow,
   icon: Icon,
+  allowMessaging = false,
   profiles,
   restorePassed = false,
   title,
@@ -61,6 +69,21 @@ export function ProfileCollectionPage({
             >
               Passed
             </Link>
+            <Link
+              className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+              href="/messages"
+            >
+              <MessageCircle size={16} />
+              Messages
+            </Link>
+            <Link
+              className="relative flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+              href="/notifications"
+            >
+              <Bell size={16} />
+              Alerts
+              <NotificationBadge />
+            </Link>
           </nav>
         </header>
 
@@ -83,6 +106,7 @@ export function ProfileCollectionPage({
         ) : (
           <ProfileCollectionGrid
             accentLabel={accentLabel}
+            allowMessaging={allowMessaging}
             profiles={profiles}
             restorePassed={restorePassed}
           />

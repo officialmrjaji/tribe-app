@@ -13,6 +13,7 @@ import {
   getOnboardingStatus,
   type OnboardingRecord,
 } from "@/lib/onboarding/service";
+import { createNotification } from "@/lib/notifications/service";
 import type { OwnedProfile } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -376,6 +377,8 @@ export async function saveDiscoveryProfile(
     .delete()
     .eq("viewer_user_id", ownedProfile.account.id)
     .eq("passed_user_id", target.user_id);
+
+  await createProfileSaveNotifications(ownedProfile, target);
 
   return { profileId: target.id, saved: true };
 }
@@ -819,6 +822,68 @@ async function getTargetProfile(ownedProfile: OwnedProfile, profileId: string) {
   }
 
   return target;
+}
+
+async function createProfileSaveNotifications(
+  ownedProfile: OwnedProfile,
+  target: InteractionProfile,
+) {
+  const supabase = createSupabaseAdminClient();
+
+  await createNotification({
+    actorUserId: ownedProfile.account.id,
+    data: {
+      profileId: ownedProfile.profile.id,
+      savedProfileId: target.id,
+    },
+    dedupeKey: `profile_saved:${ownedProfile.account.id}:${target.user_id}`,
+    entityId: ownedProfile.profile.id,
+    entityType: "profile",
+    recipientUserId: target.user_id,
+    type: "profile_saved",
+  });
+
+  const { data: reciprocalSave, error } = await supabase
+    .from("saved_profiles")
+    .select("saved_user_id")
+    .eq("viewer_user_id", target.user_id)
+    .eq("saved_user_id", ownedProfile.account.id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!reciprocalSave) {
+    return;
+  }
+
+  const pairKey = [ownedProfile.account.id, target.user_id].sort().join(":");
+
+  await Promise.all([
+    createNotification({
+      actorUserId: target.user_id,
+      data: {
+        profileId: target.id,
+      },
+      dedupeKey: `mutual_save:${pairKey}:${ownedProfile.account.id}`,
+      entityId: target.id,
+      entityType: "match",
+      recipientUserId: ownedProfile.account.id,
+      type: "mutual_save",
+    }),
+    createNotification({
+      actorUserId: ownedProfile.account.id,
+      data: {
+        profileId: ownedProfile.profile.id,
+      },
+      dedupeKey: `mutual_save:${pairKey}:${target.user_id}`,
+      entityId: ownedProfile.profile.id,
+      entityType: "match",
+      recipientUserId: target.user_id,
+      type: "mutual_save",
+    }),
+  ]);
 }
 
 function buildRecommendation({
