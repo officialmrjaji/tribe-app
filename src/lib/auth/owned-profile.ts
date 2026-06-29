@@ -1,6 +1,7 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import {
   ensureOwnedProfile,
+  getPrimaryEmailVerified,
   getPrimaryEmail,
   type OwnedProfile,
 } from "@/lib/profile/service";
@@ -31,6 +32,7 @@ export async function getCurrentOwnedProfile(): Promise<OwnedProfileSession> {
     clerkUserId: userId,
     email: getPrimaryEmail(user),
     imageUrl: user.imageUrl,
+    isEmailVerified: getPrimaryEmailVerified(user),
     name: user.fullName,
   });
 

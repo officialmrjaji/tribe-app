@@ -4,6 +4,8 @@ import {
   ensureOwnedProfile,
   getOwnedProfile,
   getPrimaryEmail,
+  getPrimaryEmailVerified,
+  getProfileQuality,
   updateOwnedProfile,
 } from "@/lib/profile/service";
 import { profileInputSchema } from "@/lib/profile/schema";
@@ -21,7 +23,10 @@ export async function GET() {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  return NextResponse.json(ownedProfile);
+  return NextResponse.json({
+    ...ownedProfile,
+    quality: await getProfileQuality(ownedProfile),
+  });
 }
 
 export async function POST() {
@@ -41,10 +46,17 @@ export async function POST() {
     clerkUserId: userId,
     email: getPrimaryEmail(user),
     imageUrl: user.imageUrl,
+    isEmailVerified: getPrimaryEmailVerified(user),
     name: user.fullName,
   });
 
-  return NextResponse.json(ownedProfile, { status: 201 });
+  return NextResponse.json(
+    {
+      ...ownedProfile,
+      quality: await getProfileQuality(ownedProfile),
+    },
+    { status: 201 },
+  );
 }
 
 export async function PATCH(request: Request) {
@@ -70,5 +82,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  return NextResponse.json(ownedProfile);
+  return NextResponse.json({
+    ...ownedProfile,
+    quality: await getProfileQuality(ownedProfile),
+  });
 }

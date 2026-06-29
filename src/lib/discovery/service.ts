@@ -27,12 +27,19 @@ type ProfileRow = {
   discoverable: boolean;
   display_name: string | null;
   id: string;
+  last_seen_at?: string | null;
   onboarding_completed_at: string | null;
+  photo_urls?: string[];
+  profile_completion_score: number;
+  profile_prompts?: ProfilePromptSummary[];
   region: string | null;
   social_pace: string | null;
   temperament_summary: string | null;
   user_id: string;
+  verified_at: string | null;
   visibility: "private" | "members" | "discoverable";
+  voice_intro_duration_seconds: number | null;
+  voice_intro_url: string | null;
 };
 
 type InteractionProfile = {
@@ -46,8 +53,38 @@ type ProfileReference = {
   user_id: string;
 };
 
+type ProfilePhotoRow = {
+  image_url: string;
+  profile_id: string;
+};
+
+type ProfilePromptSummary = {
+  answer: string;
+  prompt: string;
+};
+
+type ProfilePromptRow = {
+  answer: string;
+  profile_id: string;
+  prompt_text: string;
+};
+
+type UserActivityRow = {
+  id: string;
+  last_seen_at: string | null;
+};
+
+type ScoreBreakdown = {
+  conversationStyle: number;
+  interests: number;
+  intent: number;
+  lifestyle: number;
+  personality: number;
+};
+
 export type DiscoveryProfile = {
   accent: string;
+  activityLabel: string;
   age: number | null;
   archetype: string;
   availability: string;
@@ -61,17 +98,25 @@ export type DiscoveryProfile = {
   city: string;
   id: string;
   image: string;
+  isRecentlyActive: boolean;
   isSaved: boolean;
+  isVerified: boolean;
   match: number;
   name: string;
   pace: string;
+  photos: string[];
+  profileCompleteness: number;
+  profilePrompts: ProfilePromptSummary[];
   prompts: string[];
   reasons: string[];
+  scoreBreakdown: ScoreBreakdown;
   signal: string;
   temperament: string;
   traits: string[];
   userId: string;
   values: string[];
+  voiceIntroDurationSeconds: number | null;
+  voiceIntroUrl: string | null;
 };
 
 export type DiscoveryCollectionProfile = DiscoveryProfile & {
@@ -164,6 +209,7 @@ export async function getDiscoveryRecommendations(
       !passedProfileIds.has(profile.id) &&
       !blockedUserIds.has(profile.user_id) &&
       profile.onboarding_completed_at &&
+      profile.profile_completion_score >= 80 &&
       profile.discoverable &&
       profile.visibility !== "private",
   );
@@ -502,6 +548,7 @@ async function fetchCandidateProfiles(ownedProfile: OwnedProfile) {
     .select("*")
     .neq("user_id", ownedProfile.account.id)
     .not("onboarding_completed_at", "is", null)
+    .gte("profile_completion_score", 80)
     .eq("discoverable", true)
     .neq("visibility", "private")
     .limit(100);
@@ -510,7 +557,78 @@ async function fetchCandidateProfiles(ownedProfile: OwnedProfile) {
     throw error;
   }
 
-  return (data ?? []) as ProfileRow[];
+  return hydrateProfileQualityDetails((data ?? []) as ProfileRow[]);
+}
+
+async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
+  if (profiles.length === 0) {
+    return profiles;
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const profileIds = profiles.map((profile) => profile.id);
+  const userIds = profiles.map((profile) => profile.user_id);
+  const [photoResult, promptResult, activityResult] = await Promise.all([
+    supabase
+      .from("profile_photos")
+      .select("profile_id, image_url")
+      .in("profile_id", profileIds)
+      .order("is_primary", { ascending: false })
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("profile_prompts")
+      .select("profile_id, prompt_text, answer")
+      .in("profile_id", profileIds)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("users")
+      .select("id, last_seen_at")
+      .in("id", userIds),
+  ]);
+
+  if (photoResult.error) {
+    throw photoResult.error;
+  }
+
+  if (promptResult.error) {
+    throw promptResult.error;
+  }
+
+  if (activityResult.error) {
+    throw activityResult.error;
+  }
+
+  const photosByProfileId = new Map<string, string[]>();
+  ((photoResult.data ?? []) as ProfilePhotoRow[]).forEach((photo) => {
+    const photos = photosByProfileId.get(photo.profile_id) ?? [];
+    photos.push(photo.image_url);
+    photosByProfileId.set(photo.profile_id, photos);
+  });
+
+  const promptsByProfileId = new Map<string, ProfilePromptSummary[]>();
+  ((promptResult.data ?? []) as ProfilePromptRow[]).forEach((prompt) => {
+    const prompts = promptsByProfileId.get(prompt.profile_id) ?? [];
+    prompts.push({
+      answer: prompt.answer,
+      prompt: prompt.prompt_text,
+    });
+    promptsByProfileId.set(prompt.profile_id, prompts);
+  });
+
+  const activityByUserId = new Map(
+    ((activityResult.data ?? []) as UserActivityRow[]).map((row) => [
+      row.id,
+      row.last_seen_at,
+    ]),
+  );
+
+  return profiles.map((profile) => ({
+    ...profile,
+    last_seen_at: activityByUserId.get(profile.user_id) ?? null,
+    photo_urls: photosByProfileId.get(profile.id) ?? [],
+    profile_prompts: promptsByProfileId.get(profile.id) ?? [],
+  }));
 }
 
 async function fetchSavedProfiles(viewerUserId: string) {
@@ -621,7 +739,9 @@ async function buildInteractionCollection({
     throw profileError;
   }
 
-  const profiles = (profileRows ?? []) as ProfileRow[];
+  const profiles = await hydrateProfileQualityDetails(
+    (profileRows ?? []) as ProfileRow[],
+  );
 
   if (profiles.length === 0) {
     return [];
@@ -741,6 +861,14 @@ function buildRecommendation({
           candidateOnboarding.personality_type === "ambivert"
         ? 4
         : 2;
+  const scoreBreakdown = buildScoreBreakdown({
+    candidateOnboarding,
+    commonInterests,
+    commonLifestyleSignals,
+    currentOnboarding,
+    sameConversationStyle,
+    sameIntent,
+  });
 
   const score = clampScore(
     48 +
@@ -775,10 +903,21 @@ function buildRecommendation({
   const circles = commonInterests.length
     ? commonInterests.map(labelInterest)
     : candidateOnboarding.interests.slice(0, 3).map(labelInterest);
+  const storedPhotos = candidate.photo_urls ?? [];
+  const photoUrls = storedPhotos.length
+    ? storedPhotos
+    : candidate.avatar_url
+      ? [candidate.avatar_url]
+      : [];
+  const image =
+    photoUrls[0] ?? fallbackAvatars[index % fallbackAvatars.length];
+  const activity = getActivityState(candidate.last_seen_at ?? null);
+  const profilePrompts = (candidate.profile_prompts ?? []).slice(0, 3);
 
   return {
     profile: {
       accent: getAccent(score, index),
+      activityLabel: activity.label,
       age: getAge(candidate.birthdate),
       archetype:
         candidate.archetype ??
@@ -795,19 +934,25 @@ function buildRecommendation({
       circles: ensureAtLeast(circles, ["Shared intent", "Local discovery"]),
       city: formatLocation(candidate),
       id: candidate.id,
-      image: candidate.avatar_url ?? fallbackAvatars[index % fallbackAvatars.length],
+      image,
+      isRecentlyActive: activity.isRecentlyActive,
       isSaved,
+      isVerified: Boolean(candidate.verified_at),
       match: score,
       name: candidate.display_name ?? "Tribe member",
       pace:
         candidate.social_pace ??
         availabilityLabels[candidateOnboarding.availability],
+      photos: photoUrls.length ? photoUrls : [image],
+      profileCompleteness: candidate.profile_completion_score,
+      profilePrompts,
       prompts: ensureAtLeast(reasons, [
         "Ask what they are hoping to make more room for.",
         "Compare a low-pressure plan that fits both of your schedules.",
         "Start with the shared interest that feels easiest.",
       ]).slice(0, 3),
       reasons,
+      scoreBreakdown,
       signal: reasons[0] ?? candidateOnboarding.primary_goal,
       temperament:
         candidate.temperament_summary ??
@@ -817,6 +962,8 @@ function buildRecommendation({
       values: ensureAtLeast(values, [
         intentLabels[candidateOnboarding.intent].toLowerCase(),
       ]),
+      voiceIntroDurationSeconds: candidate.voice_intro_duration_seconds,
+      voiceIntroUrl: candidate.voice_intro_url,
     },
     rawProfile: candidate,
     reasons,
@@ -980,6 +1127,79 @@ function buildAxes({
   };
 }
 
+function buildScoreBreakdown({
+  candidateOnboarding,
+  commonInterests,
+  commonLifestyleSignals,
+  currentOnboarding,
+  sameConversationStyle,
+  sameIntent,
+}: {
+  candidateOnboarding: OnboardingRecord;
+  commonInterests: Interest[];
+  commonLifestyleSignals: LifestyleSignal[];
+  currentOnboarding: OnboardingRecord;
+  sameConversationStyle: boolean;
+  sameIntent: boolean;
+}): ScoreBreakdown {
+  const personality =
+    currentOnboarding.personality_type === candidateOnboarding.personality_type
+      ? 100
+      : currentOnboarding.personality_type === "ambivert" ||
+          candidateOnboarding.personality_type === "ambivert"
+        ? 75
+        : 45;
+
+  return {
+    conversationStyle: sameConversationStyle ? 100 : 55,
+    interests: clampBreakdown(commonInterests.length * 34),
+    intent: sameIntent ? 100 : 45,
+    lifestyle: clampBreakdown(commonLifestyleSignals.length * 34),
+    personality,
+  };
+}
+
+function getActivityState(lastSeenAt: string | null) {
+  if (!lastSeenAt) {
+    return {
+      isRecentlyActive: false,
+      label: "Activity pending",
+    };
+  }
+
+  const lastSeen = new Date(lastSeenAt);
+
+  if (Number.isNaN(lastSeen.getTime())) {
+    return {
+      isRecentlyActive: false,
+      label: "Activity pending",
+    };
+  }
+
+  const daysSince = Math.floor(
+    (Date.now() - lastSeen.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  if (daysSince <= 7) {
+    return {
+      isRecentlyActive: true,
+      label: "Recently active",
+    };
+  }
+
+  if (daysSince <= 30) {
+    return {
+      isRecentlyActive: false,
+      label: "Active this month",
+    };
+  }
+
+  return {
+    isRecentlyActive: false,
+    label: "Quiet lately",
+  };
+}
+
 async function persistRecommendations(
   viewerUserId: string,
   recommendations: Recommendation[],
@@ -1025,6 +1245,10 @@ function clampScore(value: number) {
 
 function clampAxis(value: number) {
   return Math.max(35, Math.min(98, Math.round(value)));
+}
+
+function clampBreakdown(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function getAge(birthdate: string | null) {

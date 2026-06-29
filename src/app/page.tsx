@@ -11,6 +11,7 @@ import {
   History,
   LoaderCircle,
   MapPin,
+  Mic,
   Music,
   Palette,
   RefreshCcw,
@@ -41,6 +42,14 @@ const axisMetrics = [
   { label: "Depth", key: "depth", icon: BookOpen },
   { label: "Energy", key: "energy", icon: Zap },
   { label: "Curiosity", key: "curiosity", icon: Star },
+] as const;
+
+const scoreBreakdownMetrics = [
+  { label: "Interests", key: "interests" },
+  { label: "Personality", key: "personality" },
+  { label: "Lifestyle", key: "lifestyle" },
+  { label: "Intent", key: "intent" },
+  { label: "Conversation style", key: "conversationStyle" },
 ] as const;
 
 const circleIcons = [Palette, Coffee, Music] as const;
@@ -555,6 +564,20 @@ export default function Home() {
                           <p className="mt-2 text-sm font-medium text-[#34443a]">
                             {profile.archetype}
                           </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {profile.isVerified ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-semibold text-[#2f5f36]">
+                                <ShieldCheck size={13} />
+                                Profile verified
+                              </span>
+                            ) : null}
+                            {profile.isRecentlyActive ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-[#fff4d8] px-2 py-1 text-xs font-semibold text-[#75520d]">
+                                <Sparkles size={13} />
+                                Recently active
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
 
@@ -695,10 +718,37 @@ function SelectedProfilePanel({
             {profile.age ? `, ${profile.age}` : ""}
           </h2>
           <p className="mt-1 text-sm text-[#607265]">{profile.temperament}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {profile.isVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-semibold text-[#2f5f36]">
+                <ShieldCheck size={13} />
+                Profile verified
+              </span>
+            ) : null}
+            <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#607265]">
+              <Sparkles size={13} />
+              {profile.activityLabel}
+            </span>
+          </div>
         </div>
       </div>
 
       <p className="mt-4 text-sm leading-6 text-[#34443a]">{profile.bio}</p>
+
+      {profile.photos.length > 1 ? (
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {profile.photos.slice(0, 3).map((photo, index) => (
+            <Image
+              alt={`${profile.name} profile photo ${index + 1}`}
+              className="aspect-square rounded-md object-cover"
+              height={96}
+              key={`${photo}-${index}`}
+              src={photo}
+              width={96}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
         <div>
@@ -714,6 +764,22 @@ function SelectedProfilePanel({
             Open
           </p>
           <p className="mt-1 text-sm font-semibold">{profile.availability}</p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-xs font-semibold uppercase text-[#607265]">
+            Profile quality
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="h-2 flex-1 rounded-md bg-[#e2e6dc]">
+              <div
+                className="h-2 rounded-md bg-[#17251f]"
+                style={{ width: `${profile.profileCompleteness}%` }}
+              />
+            </div>
+            <span className="text-sm font-semibold">
+              {profile.profileCompleteness}%
+            </span>
+          </div>
         </div>
       </div>
 
@@ -740,6 +806,32 @@ function SelectedProfilePanel({
             </div>
           );
         })}
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">
+          Match score breakdown
+        </p>
+        <div className="mt-3 space-y-2">
+          {scoreBreakdownMetrics.map((metric) => {
+            const value = profile.scoreBreakdown[metric.key];
+
+            return (
+              <div key={metric.key}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-semibold">{metric.label}</span>
+                  <span>{value}%</span>
+                </div>
+                <div className="mt-1 h-2 rounded-md bg-[#e2e6dc]">
+                  <div
+                    className="h-2 rounded-md bg-[#f6c66f]"
+                    style={{ width: `${value}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mt-5">
@@ -794,6 +886,42 @@ function SelectedProfilePanel({
           ))}
         </div>
       </div>
+
+      {profile.profilePrompts.length ? (
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-[#607265]">
+            Profile prompts
+          </p>
+          <div className="mt-3 space-y-2">
+            {profile.profilePrompts.map((prompt) => (
+              <div
+                className="rounded-md border border-[#e2e6dc] bg-white px-3 py-2"
+                key={prompt.prompt}
+              >
+                <p className="text-xs font-semibold uppercase text-[#607265]">
+                  {prompt.prompt}
+                </p>
+                <p className="mt-1 text-sm leading-5 text-[#34443a]">
+                  {prompt.answer}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {profile.voiceIntroUrl ? (
+        <div className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+            <Mic size={15} />
+            Voice intro
+            {profile.voiceIntroDurationSeconds
+              ? `, ${profile.voiceIntroDurationSeconds}s`
+              : ""}
+          </p>
+          <audio className="mt-3 w-full" controls src={profile.voiceIntroUrl} />
+        </div>
+      ) : null}
 
       <div className="mt-5">
         <p className="text-sm font-semibold text-[#607265]">

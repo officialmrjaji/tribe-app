@@ -1,7 +1,12 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
-import { ensureOwnedProfile, getPrimaryEmail } from "@/lib/profile/service";
+import {
+  ensureOwnedProfile,
+  getPrimaryEmail,
+  getPrimaryEmailVerified,
+  getProfileQuality,
+} from "@/lib/profile/service";
 import ProfileEditor from "./profile-editor";
 
 export default async function EditProfilePage() {
@@ -21,6 +26,7 @@ export default async function EditProfilePage() {
     clerkUserId: userId,
     email: getPrimaryEmail(user),
     imageUrl: user.imageUrl,
+    isEmailVerified: getPrimaryEmailVerified(user),
     name: user.fullName,
   });
   const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
@@ -29,5 +35,7 @@ export default async function EditProfilePage() {
     redirect("/onboarding");
   }
 
-  return <ProfileEditor profile={ownedProfile.profile} />;
+  const quality = await getProfileQuality(ownedProfile);
+
+  return <ProfileEditor profile={ownedProfile.profile} quality={quality} />;
 }

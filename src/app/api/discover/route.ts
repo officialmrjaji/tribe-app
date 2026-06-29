@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
+import { getProfileQuality } from "@/lib/profile/service";
 
 function jsonError(error: unknown) {
   console.error(error);
@@ -19,6 +20,20 @@ export async function GET() {
       return NextResponse.json(
         { error: session.error },
         { status: session.status },
+      );
+    }
+
+    const quality = await getProfileQuality(session.ownedProfile);
+
+    if (quality.completeness < 80) {
+      return NextResponse.json(
+        {
+          completed: false,
+          error: "Profile completion required",
+          profileCompleteness: quality.completeness,
+          redirectTo: "/profile/edit",
+        },
+        { status: 409 },
       );
     }
 

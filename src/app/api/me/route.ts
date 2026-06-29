@@ -1,6 +1,10 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { ensureOwnedProfile, getPrimaryEmail } from "@/lib/profile/service";
+import {
+  ensureOwnedProfile,
+  getPrimaryEmail,
+  getPrimaryEmailVerified,
+} from "@/lib/profile/service";
 
 export async function GET() {
   const { isAuthenticated, userId } = await auth();
@@ -19,6 +23,7 @@ export async function GET() {
     clerkUserId: userId,
     email: getPrimaryEmail(user),
     imageUrl: user.imageUrl,
+    isEmailVerified: getPrimaryEmailVerified(user),
     name: user.fullName,
   });
 

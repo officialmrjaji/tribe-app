@@ -1,7 +1,11 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
-import { ensureOwnedProfile, getPrimaryEmail } from "@/lib/profile/service";
+import {
+  ensureOwnedProfile,
+  getPrimaryEmail,
+  getPrimaryEmailVerified,
+} from "@/lib/profile/service";
 import OnboardingFlow from "./onboarding-flow";
 
 export default async function OnboardingPage() {
@@ -21,6 +25,7 @@ export default async function OnboardingPage() {
     clerkUserId: userId,
     email: getPrimaryEmail(user),
     imageUrl: user.imageUrl,
+    isEmailVerified: getPrimaryEmailVerified(user),
     name: user.fullName,
   });
   const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
