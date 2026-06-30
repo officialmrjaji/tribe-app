@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
-import { getProfileQuality } from "@/lib/profile/service";
+import { getOnboardingStatus } from "@/lib/onboarding/service";
+import {
+  getProfileQuality,
+  profilePhotoRequirementMessage,
+} from "@/lib/profile/service";
 
 function jsonError(error: unknown) {
   console.error(error);
@@ -23,7 +27,34 @@ export async function GET() {
       );
     }
 
+    const onboarding = await getOnboardingStatus(session.ownedProfile.profile.id);
+
+    if (!onboarding.completed) {
+      return NextResponse.json(
+        {
+          completed: false,
+          error: "Onboarding required",
+          redirectTo: "/onboarding",
+        },
+        { status: 409 },
+      );
+    }
+
     const quality = await getProfileQuality(session.ownedProfile);
+
+    if (!quality.hasMinimumPhotos) {
+      return NextResponse.json(
+        {
+          completed: false,
+          error: profilePhotoRequirementMessage,
+          profileCompleteness: quality.completeness,
+          requiredPhotoCount: quality.minimumPhotoCount,
+          uploadedPhotoCount: quality.uploadedPhotoCount,
+          redirectTo: "/profile/edit",
+        },
+        { status: 409 },
+      );
+    }
 
     if (quality.completeness < 80) {
       return NextResponse.json(
@@ -38,17 +69,6 @@ export async function GET() {
     }
 
     const discovery = await getDiscoveryRecommendations(session.ownedProfile);
-
-    if (!discovery.completed) {
-      return NextResponse.json(
-        {
-          completed: false,
-          error: "Onboarding required",
-          redirectTo: "/onboarding",
-        },
-        { status: 409 },
-      );
-    }
 
     return NextResponse.json(discovery);
   } catch (error) {

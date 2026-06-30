@@ -14,7 +14,12 @@ import {
   type OnboardingRecord,
 } from "@/lib/onboarding/service";
 import { createNotification } from "@/lib/notifications/service";
-import type { OwnedProfile } from "@/lib/profile/service";
+import {
+  assertOwnedProfileHasMinimumPhotos,
+  assertProfileHasMinimumPhotos,
+  minimumDiscoveryPhotoCount,
+  type OwnedProfile,
+} from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 type ProfileRow = {
@@ -211,6 +216,7 @@ export async function getDiscoveryRecommendations(
       !blockedUserIds.has(profile.user_id) &&
       profile.onboarding_completed_at &&
       profile.profile_completion_score >= 80 &&
+      (profile.photo_urls?.length ?? 0) >= minimumDiscoveryPhotoCount &&
       profile.discoverable &&
       profile.visibility !== "private",
   );
@@ -356,7 +362,12 @@ export async function saveDiscoveryProfile(
   ownedProfile: OwnedProfile,
   profileId: string,
 ) {
+  await assertOwnedProfileHasMinimumPhotos(ownedProfile);
+
   const target = await getTargetProfile(ownedProfile, profileId);
+
+  await assertProfileHasMinimumPhotos(target.id);
+
   const supabase = createSupabaseAdminClient();
 
   const { error: saveError } = await supabase.from("saved_profiles").upsert(

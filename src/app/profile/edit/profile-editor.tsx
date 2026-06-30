@@ -94,6 +94,10 @@ export default function ProfileEditor({
   const photosRemaining = Math.max(0, 6 - quality.photos.length);
   const completionTone =
     quality.completeness >= 80 ? "text-[#2f5f36]" : "text-[#8a3325]";
+  const photosNeeded = Math.max(
+    0,
+    quality.minimumPhotoCount - quality.uploadedPhotoCount,
+  );
 
   const sortedPhotos = useMemo(
     () =>
@@ -431,8 +435,8 @@ export default function ProfileEditor({
                   Profile photos
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[#607265]">
-                  Add up to 6 photos. The first photo becomes your discovery
-                  image.
+                  Upload at least 3 photos to unlock discovery. Add up to 6
+                  photos; the first photo becomes your discovery image.
                 </p>
               </div>
               {sortedPhotos.length ? (
@@ -584,7 +588,9 @@ export default function ProfileEditor({
               </div>
               {quality.completeness < 80 ? (
                 <p className="mt-3 text-sm leading-6 text-[#8a3325]">
-                  Discovery unlocks at 80%.
+                  {quality.hasMinimumPhotos
+                    ? "Discovery unlocks at 80%."
+                    : "Upload at least 3 photos to unlock discovery."}
                 </p>
               ) : (
                 <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#2f5f36]">
@@ -593,6 +599,19 @@ export default function ProfileEditor({
                 </p>
               )}
             </section>
+
+            {!quality.hasMinimumPhotos ? (
+              <section className="rounded-md border border-[#ef8f7a] bg-white p-4">
+                <p className="text-sm font-semibold text-[#8a3325]">
+                  Upload at least 3 photos to unlock discovery.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#34443a]">
+                  {photosNeeded} more photo{photosNeeded === 1 ? "" : "s"}{" "}
+                  needed before you can appear in recommendations, save
+                  profiles, or start conversations.
+                </p>
+              </section>
+            ) : null}
 
             <section className="rounded-md border border-[#d8ded1] bg-white p-4">
               <p className="text-sm font-semibold text-[#607265]">

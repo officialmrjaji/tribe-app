@@ -1,4 +1,8 @@
-import type { OwnedProfile } from "@/lib/profile/service";
+import {
+  getProfilePhotoRequirementState,
+  profilePhotoRequirementMessage,
+  type OwnedProfile,
+} from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { createNotification } from "@/lib/notifications/service";
 
@@ -205,6 +209,7 @@ export async function createConversation(
   }
 
   await assertNotBlocked(ownedProfile.account.id, target.user_id);
+  await assertConversationPhotoRequirements(ownedProfile.profile.id, target.id);
   await assertMutualSavePermission(ownedProfile.account.id, target.user_id);
 
   const supabase = createSupabaseAdminClient();
@@ -310,6 +315,27 @@ export async function createConversation(
   );
 
   return { conversation: summary, created };
+}
+
+async function assertConversationPhotoRequirements(
+  currentProfileId: string,
+  targetProfileId: string,
+) {
+  const [currentProfile, targetProfile] = await Promise.all([
+    getProfilePhotoRequirementState(currentProfileId),
+    getProfilePhotoRequirementState(targetProfileId),
+  ]);
+
+  if (!currentProfile.hasMinimumPhotos) {
+    throw new MessagingError(profilePhotoRequirementMessage, 403);
+  }
+
+  if (!targetProfile.hasMinimumPhotos) {
+    throw new MessagingError(
+      "Both profiles need at least 3 photos before messaging unlocks.",
+      403,
+    );
+  }
 }
 
 export async function getConversationMessages(

@@ -4,6 +4,9 @@ import type { ProfileInput } from "./schema";
 
 const profileMediaBucket = "profile-media";
 const profileMediaMaxBytes = 10 * 1024 * 1024;
+export const minimumDiscoveryPhotoCount = 3;
+export const profilePhotoRequirementMessage =
+  "Upload at least 3 photos to unlock discovery.";
 const profilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 const profileVoiceMimeTypes = [
   "audio/mpeg",
@@ -36,6 +39,30 @@ export class ProfileMediaUploadError extends Error {
     super(message);
     this.name = "ProfileMediaUploadError";
     this.status = status;
+  }
+}
+
+export class ProfileQualityRequirementError extends Error {
+  requiredPhotoCount: number;
+  status: number;
+  uploadedPhotoCount: number;
+
+  constructor({
+    message = profilePhotoRequirementMessage,
+    requiredPhotoCount = minimumDiscoveryPhotoCount,
+    status = 403,
+    uploadedPhotoCount,
+  }: {
+    message?: string;
+    requiredPhotoCount?: number;
+    status?: number;
+    uploadedPhotoCount: number;
+  }) {
+    super(message);
+    this.name = "ProfileQualityRequirementError";
+    this.requiredPhotoCount = requiredPhotoCount;
+    this.status = status;
+    this.uploadedPhotoCount = uploadedPhotoCount;
   }
 }
 
@@ -108,8 +135,11 @@ export type ProfileQualitySnapshot = {
     points: number;
   }>;
   completeness: number;
+  hasMinimumPhotos: boolean;
+  minimumPhotoCount: number;
   photos: ProfilePhoto[];
   prompts: ProfilePrompt[];
+  uploadedPhotoCount: number;
 };
 
 export const profilePromptOptions = [
@@ -306,6 +336,38 @@ export async function getProfilePhotos(profileId: string) {
   }
 
   return (data ?? []) as ProfilePhoto[];
+}
+
+export async function getProfilePhotoRequirementState(profileId: string) {
+  const photos = await getProfilePhotos(profileId);
+
+  return {
+    hasMinimumPhotos: photos.length >= minimumDiscoveryPhotoCount,
+    minimumPhotoCount: minimumDiscoveryPhotoCount,
+    uploadedPhotoCount: photos.length,
+  };
+}
+
+export async function assertOwnedProfileHasMinimumPhotos(
+  ownedProfile: OwnedProfile,
+) {
+  const state = await getProfilePhotoRequirementState(ownedProfile.profile.id);
+
+  if (!state.hasMinimumPhotos) {
+    throw new ProfileQualityRequirementError(state);
+  }
+
+  return state;
+}
+
+export async function assertProfileHasMinimumPhotos(profileId: string) {
+  const state = await getProfilePhotoRequirementState(profileId);
+
+  if (!state.hasMinimumPhotos) {
+    throw new ProfileQualityRequirementError(state);
+  }
+
+  return state;
 }
 
 export async function getProfilePrompts(profileId: string) {
@@ -802,6 +864,7 @@ function buildProfileQuality(
   prompts: ProfilePrompt[],
 ): ProfileQualitySnapshot {
   const completedPrompts = prompts.filter((prompt) => prompt.answer.trim());
+  const hasMinimumPhotos = photos.length >= minimumDiscoveryPhotoCount;
   const checklist = [
     {
       complete: Boolean(profile.display_name),
@@ -829,8 +892,8 @@ function buildProfileQuality(
       points: 15,
     },
     {
-      complete: photos.length > 0 || Boolean(profile.avatar_url),
-      label: "Profile photo",
+      complete: hasMinimumPhotos,
+      label: profilePhotoRequirementMessage,
       points: 15,
     },
     {
@@ -854,19 +917,25 @@ function buildProfileQuality(
       points: 5,
     },
   ];
-  const completeness = Math.min(
+  const rawCompleteness = Math.min(
     100,
     checklist.reduce(
       (total, item) => total + (item.complete ? item.points : 0),
       0,
     ),
   );
+  const completeness = hasMinimumPhotos
+    ? rawCompleteness
+    : Math.min(rawCompleteness, 79);
 
   return {
     checklist,
     completeness,
+    hasMinimumPhotos,
+    minimumPhotoCount: minimumDiscoveryPhotoCount,
     photos,
     prompts,
+    uploadedPhotoCount: photos.length,
   };
 }
 
