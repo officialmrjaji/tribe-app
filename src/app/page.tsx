@@ -330,6 +330,7 @@ export default function Home() {
           <nav className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
             {[
               { label: "Discover", icon: Compass, href: "/", active: true },
+              { label: "Square", icon: Sparkles, href: "/square", active: false },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
               { label: "Passed", icon: History, href: "/passed", active: false },
               {
