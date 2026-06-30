@@ -14,7 +14,7 @@ type ConversationMessagesContext = {
 };
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: ConversationMessagesContext,
 ) {
   try {
@@ -28,9 +28,16 @@ export async function GET(
     }
 
     const { conversationId } = await context.params;
+    const url = new URL(request.url);
+    const before = url.searchParams.get("before");
+    const limit = Number(url.searchParams.get("limit") ?? "");
     const result = await getConversationMessages(
       session.ownedProfile,
       conversationId,
+      {
+        before,
+        limit: Number.isFinite(limit) ? limit : undefined,
+      },
     );
 
     return NextResponse.json(result);

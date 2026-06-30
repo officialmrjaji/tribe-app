@@ -23,15 +23,22 @@ export default function MessagesInbox() {
     "loading",
   );
   const [error, setError] = useState("");
+  const unreadTotal = conversations.reduce(
+    (total, conversation) => total + conversation.unreadCount,
+    0,
+  );
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     async function loadConversations() {
       try {
+        setError("");
         const response = await fetch("/api/conversations", {
           cache: "no-store",
           headers: { Accept: "application/json" },
+          signal: controller.signal,
         });
         const payload = (await response.json().catch(() => null)) as
           | ConversationsPayload
@@ -46,6 +53,10 @@ export default function MessagesInbox() {
           setStatus("ready");
         }
       } catch (loadError) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
         if (isMounted) {
           setError(
             loadError instanceof Error
@@ -61,6 +72,70 @@ export default function MessagesInbox() {
 
     return () => {
       isMounted = false;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    function applyConversationUpdate(conversation: ConversationSummary) {
+      setConversations((currentConversations) => {
+        const existingConversation = currentConversations.find(
+          (currentConversation) => currentConversation.id === conversation.id,
+        );
+        const nextConversation = existingConversation
+          ? {
+              ...existingConversation,
+              ...conversation,
+              unreadCount: conversation.unreadCount,
+            }
+          : conversation;
+        const remainingConversations = currentConversations.filter(
+          (currentConversation) => currentConversation.id !== conversation.id,
+        );
+
+        return [nextConversation, ...remainingConversations].sort(
+          (left, right) =>
+            new Date(right.updatedAt).getTime() -
+            new Date(left.updatedAt).getTime(),
+        );
+      });
+    }
+
+    function handleConversationUpdate(event: Event) {
+      const conversation = (event as CustomEvent<ConversationSummary>).detail;
+
+      if (conversation?.id) {
+        applyConversationUpdate(conversation);
+      }
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== "tribe:lastConversationUpdate" || !event.newValue) {
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(event.newValue) as {
+          conversation?: ConversationSummary;
+        };
+
+        if (payload.conversation?.id) {
+          applyConversationUpdate(payload.conversation);
+        }
+      } catch {
+        // Ignore malformed cross-tab freshness events.
+      }
+    }
+
+    window.addEventListener("tribe:conversation-updated", handleConversationUpdate);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        "tribe:conversation-updated",
+        handleConversationUpdate,
+      );
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
@@ -80,7 +155,14 @@ export default function MessagesInbox() {
               <MessageCircle size={16} />
               Inbox
             </p>
-            <h1 className="mt-1 text-2xl font-semibold">Messages</h1>
+            <h1 className="mt-1 text-2xl font-semibold">
+              Messages
+              {unreadTotal > 0 ? (
+                <span className="ml-2 rounded-md bg-[#f6c66f] px-2 py-1 text-sm font-bold text-[#17201b]">
+                  {unreadTotal}
+                </span>
+              ) : null}
+            </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
               Conversations open only after both people save each other.
             </p>
@@ -166,6 +248,14 @@ export default function MessagesInbox() {
 function InboxLoadingState() {
   return (
     <section className="mt-6 space-y-3">
+      <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+        <p className="text-sm font-semibold text-[#607265]">
+          Loading conversations
+        </p>
+        <p className="mt-1 text-sm text-[#34443a]">
+          Fetching inbox summaries and unread counts.
+        </p>
+      </div>
       {[1, 2, 3].map((item) => (
         <div
           className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm"

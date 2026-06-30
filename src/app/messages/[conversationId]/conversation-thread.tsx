@@ -12,6 +12,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   ConversationMessage,
+  ConversationSummary,
   ConversationThread as ConversationThreadPayload,
 } from "@/lib/messaging/service";
 
@@ -22,12 +23,25 @@ type ApiErrorPayload = {
   }>;
 };
 
+type ThreadMessage = ConversationMessage & {
+  deliveryStatus?: "failed" | "sending" | "sent";
+};
+
+type ThreadState = Omit<ConversationThreadPayload, "messages"> & {
+  messages: ThreadMessage[];
+};
+
+type SendMessagePayload = {
+  conversation?: ConversationSummary;
+  message?: ConversationMessage;
+} & ApiErrorPayload;
+
 export default function ConversationThread({
   conversationId,
 }: {
   conversationId: string;
 }) {
-  const [thread, setThread] = useState<ConversationThreadPayload | null>(null);
+  const [thread, setThread] = useState<ThreadState | null>(null);
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<"error" | "loading" | "ready">(
     "loading",
@@ -35,19 +49,22 @@ export default function ConversationThread({
   const [pendingAction, setPendingAction] = useState<
     "block" | "report" | "send" | null
   >(null);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     async function loadThread() {
       try {
         const response = await fetch(
-          `/api/conversations/${conversationId}/messages`,
+          `/api/conversations/${conversationId}/messages?limit=30`,
           {
             cache: "no-store",
             headers: { Accept: "application/json" },
+            signal: controller.signal,
           },
         );
         const payload = (await response.json().catch(() => null)) as
@@ -59,14 +76,21 @@ export default function ConversationThread({
         }
 
         if (isMounted && payload) {
-          setThread(payload);
+          setThread({
+            ...payload,
+            messages: payload.messages.map(markMessageSent),
+          });
           setStatus("ready");
+
+          if (payload.conversation.unreadCount > 0) {
+            void markThreadRead(isMounted);
+          }
+        }
+      } catch (loadError) {
+        if (controller.signal.aborted) {
+          return;
         }
 
-        await fetch(`/api/conversations/${conversationId}/read`, {
-          method: "POST",
-        });
-      } catch (loadError) {
         if (isMounted) {
           setError(
             loadError instanceof Error
@@ -78,10 +102,35 @@ export default function ConversationThread({
       }
     }
 
+    async function markThreadRead(currentlyMounted: boolean) {
+      try {
+        const response = await fetch(`/api/conversations/${conversationId}/read`, {
+          method: "POST",
+        });
+
+        if (response.ok && currentlyMounted) {
+          setThread((currentThread) =>
+            currentThread
+              ? {
+                  ...currentThread,
+                  conversation: {
+                    ...currentThread.conversation,
+                    unreadCount: 0,
+                  },
+                }
+              : currentThread,
+          );
+        }
+      } catch {
+        // Read receipts are useful, but should not interrupt the conversation.
+      }
+    }
+
     loadThread();
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [conversationId]);
 
@@ -94,53 +143,160 @@ export default function ConversationThread({
     [thread?.messages],
   );
 
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function loadOlderMessages() {
+    const cursor = thread?.pagination.nextCursor;
 
-    if (!body.trim()) {
+    if (!cursor || isLoadingOlder) {
       return;
     }
 
-    setPendingAction("send");
+    setIsLoadingOlder(true);
     setError("");
-    setMessage("");
 
     try {
       const response = await fetch(
-        `/api/conversations/${conversationId}/messages`,
+        `/api/conversations/${conversationId}/messages?limit=30&before=${encodeURIComponent(
+          cursor,
+        )}`,
         {
-          body: JSON.stringify({ body }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
         },
       );
       const payload = (await response.json().catch(() => null)) as
-        | { message?: ConversationMessage }
-        | ApiErrorPayload
+        | (ConversationThreadPayload & ApiErrorPayload)
         | null;
 
-      if (!response.ok || !payload || !("message" in payload)) {
-        throw new Error(getActionFailureMessage(payload, "Message was not sent."));
-      }
-
-      const sentMessage = payload.message;
-
-      if (!sentMessage) {
-        throw new Error("Message was not sent.");
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error ?? "Unable to load earlier messages.");
       }
 
       setThread((currentThread) =>
         currentThread
           ? {
               ...currentThread,
-              messages: [...currentThread.messages, sentMessage],
+              conversation: payload.conversation,
+              messages: mergeMessages([
+                ...payload.messages.map(markMessageSent),
+                ...currentThread.messages,
+              ]),
+              pagination: payload.pagination,
             }
           : currentThread,
       );
-      setBody("");
-    } catch (sendError) {
+    } catch (loadError) {
       setError(
-        sendError instanceof Error ? sendError.message : "Message was not sent.",
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load earlier messages.",
+      );
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }
+
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const cleanBody = body.trim();
+
+    if (!cleanBody) {
+      return;
+    }
+
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticMessage: ThreadMessage = {
+      body: cleanBody,
+      createdAt: new Date().toISOString(),
+      deliveryStatus: "sending",
+      id: optimisticId,
+      isMine: true,
+      senderName: "You",
+      senderProfileId: "",
+      senderUserId: "",
+      status: "sent",
+    };
+
+    setPendingAction("send");
+    setError("");
+    setMessage("");
+    setBody("");
+    setThread((currentThread) =>
+      currentThread
+        ? {
+            ...currentThread,
+            conversation: {
+              ...currentThread.conversation,
+              lastMessage: {
+                body: cleanBody,
+                createdAt: optimisticMessage.createdAt,
+                isMine: true,
+                senderUserId: "",
+              },
+              unreadCount: 0,
+              updatedAt: optimisticMessage.createdAt,
+            },
+            messages: [...currentThread.messages, optimisticMessage],
+          }
+        : currentThread,
+    );
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversationId}/messages`,
+        {
+          body: JSON.stringify({ body: cleanBody }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | SendMessagePayload
+        | null;
+
+      if (!response.ok || !payload?.message) {
+        throw new Error(getActionFailureMessage(payload, "Message was not sent."));
+      }
+
+      const sentMessage = markMessageSent(payload.message);
+
+      setThread((currentThread) =>
+        currentThread
+          ? {
+              ...currentThread,
+              conversation: payload.conversation ?? currentThread.conversation,
+              messages: currentThread.messages.map((conversationMessage) =>
+                conversationMessage.id === optimisticId
+                  ? sentMessage
+                  : conversationMessage,
+              ),
+            }
+          : currentThread,
+      );
+
+      if (payload.conversation) {
+        announceConversationUpdate(payload.conversation);
+      }
+    } catch (sendError) {
+      const sendMessageText =
+        sendError instanceof Error ? sendError.message : "Message was not sent.";
+
+      setError(`${sendMessageText} Your draft is back in the composer.`);
+      setBody(cleanBody);
+      setThread((currentThread) =>
+        currentThread
+          ? {
+              ...currentThread,
+              messages: currentThread.messages.map((conversationMessage) =>
+                conversationMessage.id === optimisticId
+                  ? {
+                      ...conversationMessage,
+                      deliveryStatus: "failed",
+                    }
+                  : conversationMessage,
+              ),
+            }
+          : currentThread,
       );
     } finally {
       setPendingAction(null);
@@ -281,13 +437,19 @@ export default function ConversationThread({
         </header>
 
         {message ? (
-          <p className="mt-4 rounded-md border border-[#94c973] bg-white px-3 py-2 text-sm font-semibold text-[#2f5f36]">
+          <p
+            className="mt-4 rounded-md border border-[#94c973] bg-white px-3 py-2 text-sm font-semibold text-[#2f5f36]"
+            role="status"
+          >
             {message}
           </p>
         ) : null}
 
         {error ? (
-          <p className="mt-4 rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]">
+          <p
+            className="mt-4 rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
@@ -298,6 +460,20 @@ export default function ConversationThread({
         {status === "ready" && thread ? (
           <>
             <section className="mt-5 flex-1 space-y-3 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              {thread.pagination.hasMore ? (
+                <button
+                  className="mx-auto flex h-9 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
+                  disabled={isLoadingOlder}
+                  onClick={loadOlderMessages}
+                  type="button"
+                >
+                  {isLoadingOlder ? (
+                    <LoaderCircle className="animate-spin" size={15} />
+                  ) : null}
+                  Load earlier messages
+                </button>
+              ) : null}
+
               {thread.messages.length === 0 ? (
                 <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-4">
                   <p className="text-sm font-semibold text-[#607265]">
@@ -311,12 +487,7 @@ export default function ConversationThread({
               ) : (
                 thread.messages.map((conversationMessage) => (
                   <article
-                    className={[
-                      "max-w-[82%] rounded-lg px-3 py-2 text-sm leading-6",
-                      conversationMessage.isMine
-                        ? "ml-auto bg-[#17251f] text-white"
-                        : "bg-[#fbfaf4] text-[#34443a]",
-                    ].join(" ")}
+                    className={getMessageBubbleClass(conversationMessage)}
                     key={conversationMessage.id}
                   >
                     <p className="text-xs font-semibold opacity-75">
@@ -328,7 +499,7 @@ export default function ConversationThread({
                       {conversationMessage.body}
                     </p>
                     <p className="mt-1 text-xs opacity-70">
-                      {formatTime(conversationMessage.createdAt)}
+                      {getMessageStatusLabel(conversationMessage)}
                     </p>
                   </article>
                 ))
@@ -378,7 +549,15 @@ export default function ConversationThread({
 function ThreadLoadingState() {
   return (
     <section className="mt-5 flex-1 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
-      <div className="space-y-3">
+      <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
+        <p className="text-sm font-semibold text-[#607265]">
+          Opening conversation
+        </p>
+        <p className="mt-1 text-sm text-[#34443a]">
+          Loading the latest messages first.
+        </p>
+      </div>
+      <div className="mt-4 space-y-3">
         {[1, 2, 3, 4].map((item) => (
           <div
             className={[
@@ -402,6 +581,79 @@ function ThreadErrorState({ message }: { message: string }) {
       <p className="mt-3 text-sm leading-6 text-[#34443a]">{message}</p>
     </section>
   );
+}
+
+function markMessageSent(message: ConversationMessage): ThreadMessage {
+  return {
+    ...message,
+    deliveryStatus: "sent",
+  };
+}
+
+function mergeMessages(messages: ThreadMessage[]) {
+  const seen = new Set<string>();
+  const merged: ThreadMessage[] = [];
+
+  messages.forEach((message) => {
+    if (seen.has(message.id)) {
+      return;
+    }
+
+    seen.add(message.id);
+    merged.push(message);
+  });
+
+  return merged;
+}
+
+function getMessageBubbleClass(message: ThreadMessage) {
+  const base = "max-w-[82%] rounded-lg px-3 py-2 text-sm leading-6";
+
+  if (message.deliveryStatus === "failed") {
+    return `${base} ml-auto border border-[#ef8f7a] bg-[#fff5f1] text-[#8a3325]`;
+  }
+
+  if (message.isMine) {
+    return `${base} ml-auto bg-[#17251f] text-white`;
+  }
+
+  return `${base} bg-[#fbfaf4] text-[#34443a]`;
+}
+
+function getMessageStatusLabel(message: ThreadMessage) {
+  if (message.deliveryStatus === "sending") {
+    return "Sending...";
+  }
+
+  if (message.deliveryStatus === "failed") {
+    return "Not sent";
+  }
+
+  return formatTime(message.createdAt);
+}
+
+function announceConversationUpdate(conversation: ConversationSummary) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("tribe:conversation-updated", {
+      detail: conversation,
+    }),
+  );
+
+  try {
+    window.localStorage.setItem(
+      "tribe:lastConversationUpdate",
+      JSON.stringify({
+        conversation,
+        updatedAt: Date.now(),
+      }),
+    );
+  } catch {
+    // Local storage is an enhancement for cross-tab inbox freshness.
+  }
 }
 
 function getActionFailureMessage(payload: unknown, fallback: string) {

@@ -56,6 +56,13 @@ type MessageReadRow = {
   user_id: string;
 };
 
+type MessageUnreadRow = {
+  conversation_id: string;
+  created_at: string;
+  id: string;
+  sender_user_id: string;
+};
+
 type ProfileSummaryRow = {
   avatar_url: string | null;
   city: string | null;
@@ -104,10 +111,17 @@ export type ConversationMessage = {
 export type ConversationThread = {
   conversation: ConversationSummary;
   messages: ConversationMessage[];
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
 };
 
 const messageSendWindowMs = 60 * 1000;
 const maxMessagesPerWindow = 5;
+const defaultMessagePageSize = 30;
+const maxMessagePageSize = 50;
 
 export async function listConversations(ownedProfile: OwnedProfile) {
   const supabase = createSupabaseAdminClient();
@@ -128,7 +142,7 @@ export async function listConversations(ownedProfile: OwnedProfile) {
     return { conversations: [] as ConversationSummary[] };
   }
 
-  const [conversationResult, allMembersResult, messagesResult, readsResult] =
+  const [conversationResult, allMembersResult, readsResult] =
     await Promise.all([
       supabase
         .from("conversations")
@@ -140,13 +154,6 @@ export async function listConversations(ownedProfile: OwnedProfile) {
         .select("*")
         .in("conversation_id", conversationIds)
         .is("left_at", null),
-      supabase
-        .from("messages")
-        .select("*")
-        .in("conversation_id", conversationIds)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(Math.max(conversationIds.length * 12, 24)),
       supabase
         .from("message_reads")
         .select("*")
@@ -162,20 +169,23 @@ export async function listConversations(ownedProfile: OwnedProfile) {
     throw allMembersResult.error;
   }
 
-  if (messagesResult.error) {
-    throw messagesResult.error;
-  }
-
   if (readsResult.error) {
     throw readsResult.error;
   }
 
   const conversations = (conversationResult.data ?? []) as ConversationRow[];
   const allMembers = (allMembersResult.data ?? []) as ConversationMemberRow[];
-  const messages = (messagesResult.data ?? []) as MessageRow[];
   const reads = (readsResult.data ?? []) as MessageReadRow[];
   const profiles = await fetchProfilesForMembers(allMembers);
-  const messagesByConversation = groupMessagesByConversation(messages);
+  const [lastMessagesByConversation, unreadCountsByConversation] =
+    await Promise.all([
+      fetchLastMessagesByConversation(conversations),
+      fetchUnreadCountsByConversation({
+        conversationIds,
+        currentUserId: ownedProfile.account.id,
+        reads,
+      }),
+    ]);
   const readsByConversation = new Map(
     reads.map((read) => [read.conversation_id, read]),
   );
@@ -189,9 +199,14 @@ export async function listConversations(ownedProfile: OwnedProfile) {
           members: allMembers.filter(
             (member) => member.conversation_id === conversation.id,
           ),
-          messages: messagesByConversation.get(conversation.id) ?? [],
+          messages: lastMessagesByConversation.get(conversation.id)
+            ? [lastMessagesByConversation.get(conversation.id) as MessageRow]
+            : [],
           profiles,
           read: readsByConversation.get(conversation.id) ?? null,
+          unreadCount:
+            unreadCountsByConversation.get(conversation.id) ??
+            0,
         }),
       )
       .sort(sortConversationSummaries),
@@ -341,6 +356,10 @@ async function assertConversationPhotoRequirements(
 export async function getConversationMessages(
   ownedProfile: OwnedProfile,
   conversationId: string,
+  options: {
+    before?: string | null;
+    limit?: number;
+  } = {},
 ): Promise<ConversationThread> {
   const membership = await getConversationMembership(
     ownedProfile.account.id,
@@ -352,19 +371,28 @@ export async function getConversationMessages(
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  const limit = normalizeMessageLimit(options.limit);
+  let query = supabase
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
     .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(100);
+    .order("created_at", { ascending: false })
+    .limit(limit + 1);
+
+  if (options.before) {
+    query = query.lt("created_at", options.before);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
   }
 
-  const messages = (data ?? []) as MessageRow[];
+  const rows = (data ?? []) as MessageRow[];
+  const hasMore = rows.length > limit;
+  const messages = rows.slice(0, limit).reverse();
   const summary = await getConversationSummaryById(ownedProfile, conversationId);
   const members = await getConversationMembers(conversationId);
   const profiles = await fetchProfilesForMembers(members);
@@ -378,6 +406,11 @@ export async function getConversationMessages(
         profiles,
       }),
     ),
+    pagination: {
+      hasMore,
+      limit,
+      nextCursor: hasMore ? (messages[0]?.created_at ?? null) : null,
+    },
   };
 }
 
@@ -480,7 +513,13 @@ export async function sendConversationMessage(
 
   const profiles = await fetchProfilesForMembers(members);
 
+  const conversation = await getConversationSummaryById(
+    ownedProfile,
+    conversationId,
+  );
+
   return {
+    conversation,
     message: formatConversationMessage({
       currentUserId: ownedProfile.account.id,
       message: sentMessage,
@@ -829,6 +868,7 @@ function formatConversationSummary({
   messages,
   profiles,
   read,
+  unreadCount,
 }: {
   conversation: ConversationRow;
   currentUserId: string;
@@ -836,6 +876,7 @@ function formatConversationSummary({
   messages: MessageRow[];
   profiles: Map<string, ProfileSummaryRow>;
   read: MessageReadRow | null;
+  unreadCount?: number;
 }): ConversationSummary {
   const otherParticipants = members
     .filter((member) => member.user_id !== currentUserId)
@@ -844,7 +885,7 @@ function formatConversationSummary({
     );
   const lastMessage = messages[0] ?? null;
   const readAt = read?.read_at ? new Date(read.read_at).getTime() : 0;
-  const unreadCount = messages.filter((message) => {
+  const fallbackUnreadCount = messages.filter((message) => {
     const createdAt = new Date(message.created_at).getTime();
 
     return message.sender_user_id !== currentUserId && createdAt > readAt;
@@ -864,10 +905,100 @@ function formatConversationSummary({
     otherParticipants,
     permissionSource: conversation.permission_source,
     status: conversation.status,
-    unreadCount,
+    unreadCount: unreadCount ?? fallbackUnreadCount,
     updatedAt:
       conversation.last_message_at ?? conversation.updated_at ?? conversation.created_at,
   };
+}
+
+async function fetchLastMessagesByConversation(conversations: ConversationRow[]) {
+  const lastMessageIds = conversations
+    .map((conversation) => conversation.last_message_id)
+    .filter((id): id is string => Boolean(id));
+
+  if (lastMessageIds.length === 0) {
+    return new Map<string, MessageRow>();
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .in("id", lastMessageIds)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Map(
+    ((data ?? []) as MessageRow[]).map((message) => [
+      message.conversation_id,
+      message,
+    ]),
+  );
+}
+
+async function fetchUnreadCountsByConversation({
+  conversationIds,
+  currentUserId,
+  reads,
+}: {
+  conversationIds: string[];
+  currentUserId: string;
+  reads: MessageReadRow[];
+}) {
+  if (conversationIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const readAtByConversation = new Map(
+    reads.map((read) => [
+      read.conversation_id,
+      new Date(read.read_at).getTime(),
+    ]),
+  );
+  const hasReadForEveryConversation = conversationIds.every((conversationId) =>
+    readAtByConversation.has(conversationId),
+  );
+  const earliestReadAt = reads.length && hasReadForEveryConversation
+    ? new Date(
+        Math.min(
+          ...reads.map((read) => new Date(read.read_at).getTime()),
+        ),
+      ).toISOString()
+    : new Date(0).toISOString();
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id, conversation_id, created_at, sender_user_id")
+    .in("conversation_id", conversationIds)
+    .neq("sender_user_id", currentUserId)
+    .is("deleted_at", null)
+    .gt("created_at", earliestReadAt)
+    .limit(5000);
+
+  if (error) {
+    throw error;
+  }
+
+  const counts = new Map<string, number>();
+
+  ((data ?? []) as MessageUnreadRow[]).forEach((message) => {
+    const readAt = readAtByConversation.get(message.conversation_id) ?? 0;
+    const createdAt = new Date(message.created_at).getTime();
+
+    if (createdAt <= readAt) {
+      return;
+    }
+
+    counts.set(
+      message.conversation_id,
+      (counts.get(message.conversation_id) ?? 0) + 1,
+    );
+  });
+
+  return counts;
 }
 
 function formatConversationMessage({
@@ -906,23 +1037,19 @@ function formatParticipant(
   };
 }
 
-function groupMessagesByConversation(messages: MessageRow[]) {
-  const grouped = new Map<string, MessageRow[]>();
-
-  messages.forEach((message) => {
-    const current = grouped.get(message.conversation_id) ?? [];
-    current.push(message);
-    grouped.set(message.conversation_id, current);
-  });
-
-  return grouped;
-}
-
 function sortConversationSummaries(
   left: ConversationSummary,
   right: ConversationSummary,
 ) {
   return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+}
+
+function normalizeMessageLimit(limit?: number) {
+  if (!limit || !Number.isFinite(limit)) {
+    return defaultMessagePageSize;
+  }
+
+  return Math.max(1, Math.min(maxMessagePageSize, Math.floor(limit)));
 }
 
 function buildDirectKey(leftUserId: string, rightUserId: string) {
