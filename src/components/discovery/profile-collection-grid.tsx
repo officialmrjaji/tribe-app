@@ -14,6 +14,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import type { DiscoveryCollectionProfile } from "@/lib/discovery/service";
 
@@ -209,6 +210,12 @@ export function ProfileCollectionGrid({
                       compact
                       verification={profile.verification}
                     />
+                    {profile.isPremium ? (
+                      <PremiumBadge compact label="Tribe Plus" />
+                    ) : null}
+                    {profile.hasActiveBoost ? (
+                      <PremiumBadge boost compact />
+                    ) : null}
                     {profile.isRecentlyActive ? (
                       <span className="inline-flex items-center gap-1 rounded-md bg-[#fff4d8] px-2 py-1 text-xs font-semibold text-[#75520d]">
                         <Sparkles size={13} />

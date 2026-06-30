@@ -51,8 +51,8 @@ const settingsSections = [
     label: "Safety",
   },
   {
-    body: "Payments are not live. Tribe Plus planning exists, but no subscription is active in this build.",
-    href: "/settings",
+    body: "Review Tribe Plus, boosts, usage counters, restore purchases, and subscription status.",
+    href: "/premium/manage",
     icon: CreditCard,
     label: "Subscription",
   },

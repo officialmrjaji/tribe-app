@@ -35,8 +35,10 @@ type ProfileRow = {
   discoverable: boolean;
   display_name: string | null;
   email_verified_at: string | null;
+  has_active_boost?: boolean;
   id: string;
   identity_verified_at: string | null;
+  is_premium?: boolean;
   last_seen_at?: string | null;
   onboarding_completed_at: string | null;
   phone_verified_at: string | null;
@@ -109,7 +111,9 @@ export type DiscoveryProfile = {
   city: string;
   id: string;
   image: string;
+  hasActiveBoost: boolean;
   isRecentlyActive: boolean;
+  isPremium: boolean;
   isSaved: boolean;
   isVerified: boolean;
   languages: string[];
@@ -592,7 +596,14 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
   const supabase = createSupabaseAdminClient();
   const profileIds = profiles.map((profile) => profile.id);
   const userIds = profiles.map((profile) => profile.user_id);
-  const [photoResult, promptResult, activityResult] = await Promise.all([
+  const now = new Date().toISOString();
+  const [
+    photoResult,
+    promptResult,
+    activityResult,
+    subscriptionResult,
+    boostResult,
+  ] = await Promise.all([
     supabase
       .from("profile_photos")
       .select("profile_id, image_url")
@@ -609,6 +620,18 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
       .from("users")
       .select("id, last_seen_at")
       .in("id", userIds),
+    supabase
+      .from("premium_subscriptions")
+      .select("user_id")
+      .in("user_id", userIds)
+      .eq("status", "active")
+      .gt("current_period_end", now),
+    supabase
+      .from("profile_boosts")
+      .select("user_id")
+      .in("user_id", userIds)
+      .eq("status", "active")
+      .gt("expires_at", now),
   ]);
 
   if (photoResult.error) {
@@ -621,6 +644,14 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
 
   if (activityResult.error) {
     throw activityResult.error;
+  }
+
+  if (subscriptionResult.error) {
+    throw subscriptionResult.error;
+  }
+
+  if (boostResult.error) {
+    throw boostResult.error;
   }
 
   const photosByProfileId = new Map<string, string[]>();
@@ -646,9 +677,21 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
       row.last_seen_at,
     ]),
   );
+  const premiumUserIds = new Set(
+    ((subscriptionResult.data ?? []) as Array<{ user_id: string }>).map(
+      (row) => row.user_id,
+    ),
+  );
+  const boostedUserIds = new Set(
+    ((boostResult.data ?? []) as Array<{ user_id: string }>).map(
+      (row) => row.user_id,
+    ),
+  );
 
   return profiles.map((profile) => ({
     ...profile,
+    has_active_boost: boostedUserIds.has(profile.user_id),
+    is_premium: premiumUserIds.has(profile.user_id),
     last_seen_at: activityByUserId.get(profile.user_id) ?? null,
     photo_urls: photosByProfileId.get(profile.id) ?? [],
     profile_prompts: promptsByProfileId.get(profile.id) ?? [],
@@ -964,7 +1007,8 @@ function buildRecommendation({
       Math.min(commonLifestyleSignals.length * 4, 16) +
       (sameConversationStyle ? 11 : 0) +
       (sameAvailability ? 9 : 0) +
-      personalityFit,
+      personalityFit +
+      (candidate.has_active_boost ? 6 : 0),
   );
   const reasons = buildReasons({
     candidate,
@@ -1032,7 +1076,9 @@ function buildRecommendation({
       city: formatLocation(candidate),
       id: candidate.id,
       image,
+      hasActiveBoost: Boolean(candidate.has_active_boost),
       isRecentlyActive: activity.isRecentlyActive,
+      isPremium: Boolean(candidate.is_premium),
       isSaved,
       isVerified:
         verification.email || verification.phone || verification.identity,

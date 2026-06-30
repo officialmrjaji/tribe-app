@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isClerkInternalRoute = createRouteMatcher(["/__clerk(.*)", "/clerk_(.*)"]);
+const isSignedWebhookRoute = createRouteMatcher(["/api/premium/webhook(.*)"]);
 const isProtectedRoute = createRouteMatcher([
   "/",
   "/onboarding(.*)",
@@ -10,6 +11,7 @@ const isProtectedRoute = createRouteMatcher([
   "/passed(.*)",
   "/messages(.*)",
   "/notifications(.*)",
+  "/premium(.*)",
   "/safety(.*)",
   "/settings(.*)",
   "/square(.*)",
@@ -19,12 +21,13 @@ const isProtectedRoute = createRouteMatcher([
   "/api/me(.*)",
   "/api/notifications(.*)",
   "/api/onboarding(.*)",
+  "/api/premium(.*)",
   "/api/profile(.*)",
   "/api/square(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isClerkInternalRoute(req)) {
+  if (isClerkInternalRoute(req) || isSignedWebhookRoute(req)) {
     return;
   }
 

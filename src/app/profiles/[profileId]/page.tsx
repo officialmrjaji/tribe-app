@@ -8,6 +8,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getProfileVerification } from "@/lib/profile/service";
@@ -77,7 +78,14 @@ export default async function PublicProfilePage(
     notFound();
   }
 
-  const [blockResult, photoResult, promptResult] = await Promise.all([
+  const now = new Date().toISOString();
+  const [
+    blockResult,
+    photoResult,
+    promptResult,
+    subscriptionResult,
+    boostResult,
+  ] = await Promise.all([
     supabase
       .from("blocked_users")
       .select("blocker_user_id, blocked_user_id")
@@ -97,6 +105,20 @@ export default async function PublicProfilePage(
       .eq("profile_id", publicProfile.id)
       .order("sort_order", { ascending: true })
       .limit(3),
+    supabase
+      .from("premium_subscriptions")
+      .select("id")
+      .eq("user_id", publicProfile.user_id)
+      .eq("status", "active")
+      .gt("current_period_end", now)
+      .limit(1),
+    supabase
+      .from("profile_boosts")
+      .select("id")
+      .eq("user_id", publicProfile.user_id)
+      .eq("status", "active")
+      .gt("expires_at", now)
+      .limit(1),
   ]);
 
   if (blockResult.error) {
@@ -115,9 +137,19 @@ export default async function PublicProfilePage(
     throw promptResult.error;
   }
 
+  if (subscriptionResult.error) {
+    throw subscriptionResult.error;
+  }
+
+  if (boostResult.error) {
+    throw boostResult.error;
+  }
+
   const photos = (photoResult.data ?? []) as PublicPhotoRow[];
   const prompts = (promptResult.data ?? []) as PublicPromptRow[];
   const primaryImage = photos[0]?.image_url ?? publicProfile.avatar_url;
+  const isPremium = (subscriptionResult.data ?? []).length > 0;
+  const hasActiveBoost = (boostResult.data ?? []).length > 0;
 
   return (
     <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
@@ -161,6 +193,8 @@ export default async function PublicProfilePage(
                 <VerificationBadges
                   verification={getProfileVerification(publicProfile)}
                 />
+                {isPremium ? <PremiumBadge label="Tribe Plus" /> : null}
+                {hasActiveBoost ? <PremiumBadge boost /> : null}
                 <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#607265]">
                   <ShieldCheck size={13} />
                   {publicProfile.profile_completion_score}% complete

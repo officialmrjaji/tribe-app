@@ -7,6 +7,7 @@ import {
   Check,
   Coffee,
   Compass,
+  Crown,
   Heart,
   History,
   LoaderCircle,
@@ -33,6 +34,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBadge } from "@/components/notifications/notification-badge";
+import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
 
@@ -331,6 +333,7 @@ export default function Home() {
             {[
               { label: "Discover", icon: Compass, href: "/", active: true },
               { label: "Square", icon: Sparkles, href: "/square", active: false },
+              { label: "Premium", icon: Crown, href: "/premium", active: false },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
               { label: "Passed", icon: History, href: "/passed", active: false },
               {
@@ -609,6 +612,12 @@ export default function Home() {
                               compact
                               verification={profile.verification}
                             />
+                            {profile.isPremium ? (
+                              <PremiumBadge compact label="Tribe Plus" />
+                            ) : null}
+                            {profile.hasActiveBoost ? (
+                              <PremiumBadge boost compact />
+                            ) : null}
                             {profile.isRecentlyActive ? (
                               <span className="inline-flex items-center gap-1 rounded-md bg-[#fff4d8] px-2 py-1 text-xs font-semibold text-[#75520d]">
                                 <Sparkles size={13} />
@@ -779,6 +788,8 @@ function SelectedProfilePanel({
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <VerificationBadges compact verification={profile.verification} />
+            {profile.isPremium ? <PremiumBadge compact label="Tribe Plus" /> : null}
+            {profile.hasActiveBoost ? <PremiumBadge boost compact /> : null}
             <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#607265]">
               <Sparkles size={13} />
               {profile.activityLabel}
