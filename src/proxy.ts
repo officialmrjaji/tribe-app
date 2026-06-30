@@ -4,6 +4,7 @@ const isClerkInternalRoute = createRouteMatcher(["/__clerk(.*)", "/clerk_(.*)"])
 const isSignedWebhookRoute = createRouteMatcher(["/api/premium/webhook(.*)"]);
 const isProtectedRoute = createRouteMatcher([
   "/",
+  "/ai(.*)",
   "/onboarding(.*)",
   "/profile(.*)",
   "/profiles(.*)",
@@ -16,6 +17,7 @@ const isProtectedRoute = createRouteMatcher([
   "/settings(.*)",
   "/square(.*)",
   "/api/conversations(.*)",
+  "/api/ai(.*)",
   "/api/discover(.*)",
   "/api/messages(.*)",
   "/api/me(.*)",

@@ -7,6 +7,7 @@ import {
   MessageCircle,
   Search,
   ShieldCheck,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -49,6 +50,12 @@ const settingsSections = [
     href: "/safety",
     icon: ShieldCheck,
     label: "Safety",
+  },
+  {
+    body: "Use optional profile, match, conversation, and safety drafting support without auto-sending anything.",
+    href: "/ai",
+    icon: Sparkles,
+    label: "AI Companion",
   },
   {
     body: "Review Tribe Plus, boosts, usage counters, restore purchases, and subscription status.",

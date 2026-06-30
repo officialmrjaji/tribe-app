@@ -334,6 +334,7 @@ export default function Home() {
               { label: "Discover", icon: Compass, href: "/", active: true },
               { label: "Square", icon: Sparkles, href: "/square", active: false },
               { label: "Premium", icon: Crown, href: "/premium", active: false },
+              { label: "AI Coach", icon: Sparkles, href: "/ai", active: false },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
               { label: "Passed", icon: History, href: "/passed", active: false },
               {
