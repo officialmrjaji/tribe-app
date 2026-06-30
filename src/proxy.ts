@@ -9,6 +9,8 @@ const isProtectedRoute = createRouteMatcher([
   "/passed(.*)",
   "/messages(.*)",
   "/notifications(.*)",
+  "/safety(.*)",
+  "/settings(.*)",
   "/api/conversations(.*)",
   "/api/discover(.*)",
   "/api/messages(.*)",

@@ -289,20 +289,31 @@ function InboxErrorState({ message }: { message: string }) {
 function InboxEmptyState() {
   return (
     <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-[#607265]">No conversations</p>
+      <p className="text-sm font-semibold text-[#607265]">
+        No conversations yet
+      </p>
       <h2 className="mt-1 text-xl font-semibold">
-        Mutual saves can become quiet conversations.
+        Messaging opens only when interest is mutual.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Save profiles that feel aligned. When they save you too, messaging can
-        open from your saved profiles.
+        Save profiles that feel aligned. If they save you too, the Message
+        button appears in saved profiles. Blocks, incomplete profiles, and
+        one-sided saves stay closed for safety.
       </p>
-      <Link
-        className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-        href="/saved"
-      >
-        Open saved profiles
-      </Link>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <Link
+          className="inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+          href="/saved"
+        >
+          Open saved profiles
+        </Link>
+        <Link
+          className="inline-flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+          href="/"
+        >
+          Return to discovery
+        </Link>
+      </div>
     </section>
   );
 }

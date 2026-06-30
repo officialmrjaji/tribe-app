@@ -21,8 +21,8 @@ export default async function PassedProfilesPage() {
     <ProfileCollectionPage
       accentLabel="Passed"
       description="Profiles you skipped from discovery. Active passes stay out of your recommendation queue."
-      emptyBody="When you pass a profile from discovery, it moves here and is removed from your current recommendations."
-      emptyTitle="No passed profiles yet."
+      emptyBody="Passed profiles stay out of your active recommendations. If you restore someone later, they can return to discovery when they still match your filters."
+      emptyTitle="No hidden discovery history yet."
       eyebrow="Discovery history"
       icon={X}
       profiles={passedProfiles.profiles}

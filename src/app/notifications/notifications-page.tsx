@@ -271,12 +271,18 @@ function NotificationsEmptyState() {
     <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
       <p className="text-sm font-semibold text-[#607265]">No updates yet</p>
       <h2 className="mt-1 text-xl font-semibold">
-        Important activity will collect here.
+        Important activity will stay easy to review.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Saves, mutual saves, conversations, and new messages will appear without
-        push or email notifications for now.
+        Saves, mutual saves, conversation starts, and new messages will appear
+        here. Push and email notifications are intentionally off in this build.
       </p>
+      <Link
+        className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+        href="/"
+      >
+        Open discovery
+      </Link>
     </section>
   );
 }

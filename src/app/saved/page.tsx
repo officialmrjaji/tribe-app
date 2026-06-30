@@ -21,8 +21,8 @@ export default async function SavedProfilesPage() {
     <ProfileCollectionPage
       accentLabel="Saved"
       description="People you marked as worth returning to, with the same personality-first signals from discovery."
-      emptyBody="Save people from discovery when a profile feels promising. They will appear here for quick review."
-      emptyTitle="No saved profiles yet."
+      emptyBody="Use Save when someone's values, goals, and rhythm feel worth revisiting. Mutual saves can unlock messaging when both profiles meet safety and quality requirements."
+      emptyTitle="Your saved list is still open."
       eyebrow="Discovery library"
       icon={Heart}
       allowMessaging

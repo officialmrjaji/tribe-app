@@ -17,6 +17,7 @@ import {
   Palette,
   RefreshCcw,
   Search,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -32,6 +33,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBadge } from "@/components/notifications/notification-badge";
+import { VerificationBadges } from "@/components/profile/verification-badges";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
 
 const focusModes = ["Deep talk", "Soft plans", "New circle"] as const;
@@ -325,7 +327,7 @@ export default function Home() {
             </Link>
           </div>
 
-          <nav className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-1">
+          <nav className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
             {[
               { label: "Discover", icon: Compass, href: "/", active: true },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
@@ -347,6 +349,18 @@ export default function Home() {
                 label: "Profile",
                 icon: UserRound,
                 href: "/profile/edit",
+                active: false,
+              },
+              {
+                label: "Settings",
+                icon: Settings,
+                href: "/settings",
+                active: false,
+              },
+              {
+                label: "Safety",
+                icon: ShieldCheck,
+                href: "/safety",
                 active: false,
               },
             ].map((item) => (
@@ -553,6 +567,7 @@ export default function Home() {
                   >
                     <button
                       className="block w-full text-left"
+                      aria-label={`View ${profile.name}'s profile details`}
                       onClick={() => setSelectedId(profile.id)}
                       type="button"
                     >
@@ -586,15 +601,13 @@ export default function Home() {
                             </span>
                           </div>
                           <p className="mt-2 text-sm font-medium text-[#34443a]">
-                            {profile.archetype}
+                            {profile.personalitySummary}
                           </p>
                           <div className="mt-2 flex flex-wrap gap-1.5">
-                            {profile.isVerified ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-semibold text-[#2f5f36]">
-                                <ShieldCheck size={13} />
-                                Profile verified
-                              </span>
-                            ) : null}
+                            <VerificationBadges
+                              compact
+                              verification={profile.verification}
+                            />
                             {profile.isRecentlyActive ? (
                               <span className="inline-flex items-center gap-1 rounded-md bg-[#fff4d8] px-2 py-1 text-xs font-semibold text-[#75520d]">
                                 <Sparkles size={13} />
@@ -608,6 +621,25 @@ export default function Home() {
                       <p className="mt-4 min-h-12 text-sm leading-6 text-[#4e5e54]">
                         {profile.signal}
                       </p>
+
+                      <div className="mt-3 grid gap-2 text-xs font-semibold text-[#34443a]">
+                        <p>
+                          <span className="text-[#607265]">Shared interests:</span>{" "}
+                          {profile.sharedInterests.length
+                            ? profile.sharedInterests.slice(0, 3).join(", ")
+                            : "Still discovering overlap"}
+                        </p>
+                        <p>
+                          <span className="text-[#607265]">Shared goals:</span>{" "}
+                          {profile.sharedGoals.slice(0, 2).join(", ")}
+                        </p>
+                        {profile.languages.length ? (
+                          <p>
+                            <span className="text-[#607265]">Languages:</span>{" "}
+                            {profile.languages.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
 
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-semibold uppercase text-[#607265]">
@@ -741,14 +773,11 @@ function SelectedProfilePanel({
             {profile.name}
             {profile.age ? `, ${profile.age}` : ""}
           </h2>
-          <p className="mt-1 text-sm text-[#607265]">{profile.temperament}</p>
+          <p className="mt-1 text-sm text-[#607265]">
+            {profile.personalitySummary}
+          </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {profile.isVerified ? (
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-semibold text-[#2f5f36]">
-                <ShieldCheck size={13} />
-                Profile verified
-              </span>
-            ) : null}
+            <VerificationBadges compact verification={profile.verification} />
             <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#607265]">
               <Sparkles size={13} />
               {profile.activityLabel}
@@ -758,6 +787,15 @@ function SelectedProfilePanel({
       </div>
 
       <p className="mt-4 text-sm leading-6 text-[#34443a]">{profile.bio}</p>
+
+      <div className="mt-4 rounded-md border border-[#e2e6dc] bg-white p-3">
+        <p className="text-sm font-semibold text-[#607265]">
+          Personality summary
+        </p>
+        <p className="mt-1 text-sm leading-6 text-[#34443a]">
+          {profile.temperament}. {profile.archetype} with a {profile.pace.toLowerCase()} rhythm.
+        </p>
+      </div>
 
       {profile.photos.length > 1 ? (
         <div className="mt-4 grid grid-cols-3 gap-2">
@@ -860,10 +898,14 @@ function SelectedProfilePanel({
 
       <div className="mt-5">
         <p className="text-sm font-semibold text-[#607265]">
-          Values in common
+          Interests, languages, and goals
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {profile.values.map((value) => (
+          {[
+            ...profile.sharedInterests,
+            ...profile.languages,
+            ...profile.sharedGoals,
+          ].slice(0, 8).map((value) => (
             <span
               key={value}
               className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
@@ -871,6 +913,13 @@ function SelectedProfilePanel({
               {value}
             </span>
           ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">Verification</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <VerificationBadges verification={profile.verification} />
         </div>
       </div>
 
@@ -1036,9 +1085,10 @@ function EmptyDiscovery({
         Discovery will fill in as members complete profiles.
       </h3>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        The mock profiles are gone. Tribe is now reading from Supabase and will
-        hide your own profile, passed profiles, and blocked profiles from this
-        view.
+        Discovery only shows members who completed onboarding, reached profile
+        quality, stayed visible, and passed safety filters. Try widening your
+        filters, finish your own profile, or check back as more members become
+        discoverable.
       </p>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         {lastPassedProfile ? (

@@ -87,8 +87,11 @@ type ProfileRecord = {
   created_at: string;
   discoverable: boolean;
   display_name: string | null;
+  email_verified_at: string | null;
+  identity_verified_at: string | null;
   id: string;
   onboarding_completed_at: string | null;
+  phone_verified_at: string | null;
   profile_completion_score: number;
   region: string | null;
   social_pace: string | null;
@@ -100,6 +103,12 @@ type ProfileRecord = {
   voice_intro_duration_seconds: number | null;
   voice_intro_storage_path: string | null;
   voice_intro_url: string | null;
+};
+
+export type ProfileVerification = {
+  email: boolean;
+  identity: boolean;
+  phone: boolean;
 };
 
 export type ProfilePhoto = {
@@ -161,6 +170,19 @@ export type OwnedProfile = {
   account: UserAccount;
   profile: ProfileRecord;
 };
+
+export function getProfileVerification(
+  profile: Pick<
+    ProfileRecord,
+    "email_verified_at" | "identity_verified_at" | "phone_verified_at"
+  >,
+): ProfileVerification {
+  return {
+    email: Boolean(profile.email_verified_at),
+    identity: Boolean(profile.identity_verified_at),
+    phone: Boolean(profile.phone_verified_at),
+  };
+}
 
 export function getPrimaryEmail(user: User) {
   return (
@@ -235,10 +257,10 @@ export async function ensureOwnedProfile({
   }
 
   if (existingProfile) {
-    if (isEmailVerified && !existingProfile.verified_at) {
+    if (isEmailVerified && !existingProfile.email_verified_at) {
       const { data: verifiedProfile, error: verificationError } = await supabase
         .from("profiles")
-        .update({ updated_at: now, verified_at: now })
+        .update({ email_verified_at: now, updated_at: now })
         .eq("id", existingProfile.id)
         .select("*")
         .single();
@@ -259,7 +281,7 @@ export async function ensureOwnedProfile({
       avatar_url: imageUrl ?? null,
       clerk_user_id: clerkUserId,
       display_name: name ?? null,
-      verified_at: isEmailVerified ? now : null,
+      email_verified_at: isEmailVerified ? now : null,
       user_id: account.id,
     })
     .select("*")

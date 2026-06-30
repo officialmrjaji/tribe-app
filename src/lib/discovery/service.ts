@@ -17,7 +17,9 @@ import { createNotification } from "@/lib/notifications/service";
 import {
   assertOwnedProfileHasMinimumPhotos,
   assertProfileHasMinimumPhotos,
+  getProfileVerification,
   minimumDiscoveryPhotoCount,
+  type ProfileVerification,
   type OwnedProfile,
 } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -32,9 +34,12 @@ type ProfileRow = {
   country: string | null;
   discoverable: boolean;
   display_name: string | null;
+  email_verified_at: string | null;
   id: string;
+  identity_verified_at: string | null;
   last_seen_at?: string | null;
   onboarding_completed_at: string | null;
+  phone_verified_at: string | null;
   photo_urls?: string[];
   profile_completion_score: number;
   profile_prompts?: ProfilePromptSummary[];
@@ -107,9 +112,11 @@ export type DiscoveryProfile = {
   isRecentlyActive: boolean;
   isSaved: boolean;
   isVerified: boolean;
+  languages: string[];
   match: number;
   name: string;
   pace: string;
+  personalitySummary: string;
   photos: string[];
   profileCompleteness: number;
   profilePrompts: ProfilePromptSummary[];
@@ -117,10 +124,13 @@ export type DiscoveryProfile = {
   reasons: string[];
   scoreBreakdown: ScoreBreakdown;
   signal: string;
+  sharedGoals: string[];
+  sharedInterests: string[];
   temperament: string;
   traits: string[];
   userId: string;
   values: string[];
+  verification: ProfileVerification;
   voiceIntroDurationSeconds: number | null;
   voiceIntroUrl: string | null;
 };
@@ -989,6 +999,17 @@ function buildRecommendation({
     photoUrls[0] ?? fallbackAvatars[index % fallbackAvatars.length];
   const activity = getActivityState(candidate.last_seen_at ?? null);
   const profilePrompts = (candidate.profile_prompts ?? []).slice(0, 3);
+  const verification = getProfileVerification(candidate);
+  const sharedInterests = commonInterests.map(labelInterest);
+  const sharedGoals = sameIntent
+    ? [intentLabels[candidateOnboarding.intent]]
+    : [candidateOnboarding.primary_goal];
+  const languages = buildLanguageSignals(candidateOnboarding);
+  const personalitySummary = [
+    personalityTypeLabels[candidateOnboarding.personality_type],
+    conversationStyleLabels[candidateOnboarding.conversation_style],
+    availabilityLabels[candidateOnboarding.availability],
+  ].join(" / ");
 
   return {
     profile: {
@@ -1013,12 +1034,15 @@ function buildRecommendation({
       image,
       isRecentlyActive: activity.isRecentlyActive,
       isSaved,
-      isVerified: Boolean(candidate.verified_at),
+      isVerified:
+        verification.email || verification.phone || verification.identity,
+      languages,
       match: score,
       name: candidate.display_name ?? "Tribe member",
       pace:
         candidate.social_pace ??
         availabilityLabels[candidateOnboarding.availability],
+      personalitySummary,
       photos: photoUrls.length ? photoUrls : [image],
       profileCompleteness: candidate.profile_completion_score,
       profilePrompts,
@@ -1030,6 +1054,8 @@ function buildRecommendation({
       reasons,
       scoreBreakdown,
       signal: reasons[0] ?? candidateOnboarding.primary_goal,
+      sharedGoals,
+      sharedInterests,
       temperament:
         candidate.temperament_summary ??
         conversationStyleLabels[candidateOnboarding.conversation_style],
@@ -1038,6 +1064,7 @@ function buildRecommendation({
       values: ensureAtLeast(values, [
         intentLabels[candidateOnboarding.intent].toLowerCase(),
       ]),
+      verification,
       voiceIntroDurationSeconds: candidate.voice_intro_duration_seconds,
       voiceIntroUrl: candidate.voice_intro_url,
     },
@@ -1274,6 +1301,19 @@ function getActivityState(lastSeenAt: string | null) {
     isRecentlyActive: false,
     label: "Quiet lately",
   };
+}
+
+function buildLanguageSignals(onboarding: OnboardingRecord) {
+  const languages = new Set<string>();
+
+  if (
+    onboarding.intent === "language_exchange" ||
+    onboarding.interests.includes("languages")
+  ) {
+    languages.add("Language exchange");
+  }
+
+  return Array.from(languages);
 }
 
 async function persistRecommendations(

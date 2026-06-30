@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
 import {
   ensureOwnedProfile,
+  getProfileVerification,
   getPrimaryEmail,
   getPrimaryEmailVerified,
   getProfileQuality,
@@ -37,5 +38,12 @@ export default async function EditProfilePage() {
 
   const quality = await getProfileQuality(ownedProfile);
 
-  return <ProfileEditor profile={ownedProfile.profile} quality={quality} />;
+  return (
+    <ProfileEditor
+      onboarding={onboarding.response}
+      profile={ownedProfile.profile}
+      quality={quality}
+      verification={getProfileVerification(ownedProfile.profile)}
+    />
+  );
 }

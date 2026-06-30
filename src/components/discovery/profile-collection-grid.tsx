@@ -14,6 +14,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { VerificationBadges } from "@/components/profile/verification-badges";
 import type { DiscoveryCollectionProfile } from "@/lib/discovery/service";
 
 type ProfileCollectionGridProps = {
@@ -201,14 +202,39 @@ export function ProfileCollectionGrid({
                     </span>
                   </div>
                   <p className="mt-2 text-sm font-medium text-[#34443a]">
-                    {profile.archetype}
+                    {profile.personalitySummary}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <VerificationBadges
+                      compact
+                      verification={profile.verification}
+                    />
+                    {profile.isRecentlyActive ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#fff4d8] px-2 py-1 text-xs font-semibold text-[#75520d]">
+                        <Sparkles size={13} />
+                        Recently active
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
               <p className="mt-4 text-sm leading-6 text-[#4e5e54]">
                 {profile.signal}
               </p>
+
+              <div className="mt-3 grid gap-2 text-xs font-semibold text-[#34443a]">
+                <p>
+                  <span className="text-[#607265]">Shared interests:</span>{" "}
+                  {profile.sharedInterests.length
+                    ? profile.sharedInterests.slice(0, 3).join(", ")
+                    : "Still discovering overlap"}
+                </p>
+                <p>
+                  <span className="text-[#607265]">Shared goals:</span>{" "}
+                  {profile.sharedGoals.slice(0, 2).join(", ")}
+                </p>
+              </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
                 <div>

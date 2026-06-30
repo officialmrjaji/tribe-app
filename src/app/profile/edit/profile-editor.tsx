@@ -11,13 +11,25 @@ import {
   Save,
   ShieldCheck,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { VerificationBadges } from "@/components/profile/verification-badges";
+import {
+  availabilityLabels,
+  conversationStyleLabels,
+  intentLabels,
+  interestLabels,
+  lifestyleSignalLabels,
+  personalityTypeLabels,
+} from "@/lib/onboarding/options";
+import type { OnboardingSnapshot } from "@/lib/onboarding/service";
 import type {
   OwnedProfile,
   ProfileQualitySnapshot,
+  ProfileVerification,
 } from "@/lib/profile/service";
 
 const profilePromptOptions = [
@@ -49,13 +61,17 @@ type ProfileDraft = {
 };
 
 type ProfileEditorProps = {
+  onboarding: OnboardingSnapshot | null;
   profile: EditableProfile;
   quality: ProfileQualitySnapshot;
+  verification: ProfileVerification;
 };
 
 export default function ProfileEditor({
+  onboarding,
   profile,
   quality: initialQuality,
+  verification,
 }: ProfileEditorProps) {
   const [draft, setDraft] = useState<ProfileDraft>({
     bio: profile.bio ?? "",
@@ -106,6 +122,11 @@ export default function ProfileEditor({
       ),
     [quality.photos],
   );
+  const languageSignals =
+    onboarding?.interests.includes("languages") ||
+    onboarding?.intent === "language_exchange"
+      ? ["Language exchange"]
+      : [];
 
   function updateDraft(update: Partial<ProfileDraft>) {
     setDraft((current) => ({ ...current, ...update }));
@@ -344,7 +365,12 @@ export default function ProfileEditor({
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
-            <section className="space-y-5">
+            <section className="space-y-5 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <SectionHeader
+                eyebrow="About"
+                title="Core profile"
+                body="Name, location, and bio give people enough context before they save or message."
+              />
               <label className="block">
                 <span className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
                   <UserRound size={16} />
@@ -428,17 +454,13 @@ export default function ProfileEditor({
               </div>
             </section>
 
-            <section className="space-y-4 border-t border-[#d8ded1] pt-6">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
-                  <ImagePlus size={16} />
-                  Profile photos
-                </p>
-                <p className="mt-1 text-sm leading-6 text-[#607265]">
-                  Upload at least 3 photos to unlock discovery. Add up to 6
-                  photos; the first photo becomes your discovery image.
-                </p>
-              </div>
+            <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <SectionHeader
+                body="Upload at least 3 photos to unlock discovery. Add up to 6 photos; the first photo becomes your discovery image."
+                icon={ImagePlus}
+                eyebrow="Photos"
+                title="Profile photos"
+              />
               {sortedPhotos.length ? (
                 <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
                   {sortedPhotos.map((photo) => (
@@ -483,16 +505,13 @@ export default function ProfileEditor({
               </div>
             </section>
 
-            <section className="space-y-4 border-t border-[#d8ded1] pt-6">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
-                  <Mic size={16} />
-                  Voice introduction
-                </p>
-                <p className="mt-1 text-sm leading-6 text-[#607265]">
-                  Optional, 30 to 60 seconds.
-                </p>
-              </div>
+            <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <SectionHeader
+                body="Optional, 30 to 60 seconds. A short voice intro helps people feel your pace before messaging."
+                icon={Mic}
+                eyebrow="Voice Intro"
+                title="Voice introduction"
+              />
               {profile.voice_intro_url ? (
                 <audio className="w-full" controls src={profile.voice_intro_url} />
               ) : null}
@@ -525,16 +544,12 @@ export default function ProfileEditor({
               ) : null}
             </section>
 
-            <section className="space-y-4 border-t border-[#d8ded1] pt-6">
-              <div>
-                <p className="text-sm font-semibold text-[#34443a]">
-                  Profile prompts
-                </p>
-                <p className="mt-1 text-sm leading-6 text-[#607265]">
-                  Answer at least two prompts to help people understand your
-                  rhythm.
-                </p>
-              </div>
+            <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <SectionHeader
+                body="Answer at least two prompts to help people understand your rhythm."
+                eyebrow="Prompts"
+                title="Profile prompts"
+              />
               {promptDrafts.map((prompt, index) => (
                 <label className="block" key={prompt.promptKey}>
                   <span className="text-sm font-semibold text-[#34443a]">
@@ -569,6 +584,56 @@ export default function ProfileEditor({
                 )}
                 Save prompts
               </button>
+            </section>
+
+            <section className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <SectionHeader
+                body="These read-only signals come from onboarding and shape discovery, matching, and first-message context."
+                eyebrow="Profile Signals"
+                title="Interests, languages, personality, lifestyle, and goals"
+              />
+              {onboarding ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <SignalGroup
+                    label="Interests"
+                    values={onboarding.interests.map(
+                      (interest) => interestLabels[interest],
+                    )}
+                  />
+                  <SignalGroup
+                    label="Languages"
+                    values={languageSignals.length ? languageSignals : ["Not set"]}
+                  />
+                  <SignalGroup
+                    label="Personality"
+                    values={[
+                      personalityTypeLabels[onboarding.personalityType],
+                      conversationStyleLabels[onboarding.conversationStyle],
+                    ]}
+                  />
+                  <SignalGroup
+                    label="Lifestyle"
+                    values={onboarding.lifestyleSignals.map(
+                      (signal) => lifestyleSignalLabels[signal],
+                    )}
+                  />
+                  <SignalGroup
+                    label="Goals"
+                    values={[
+                      intentLabels[onboarding.intent],
+                      onboarding.primaryGoal,
+                    ]}
+                  />
+                  <SignalGroup
+                    label="Availability"
+                    values={[availabilityLabels[onboarding.availability]]}
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] px-3 py-2 text-sm text-[#34443a]">
+                  Complete onboarding to fill in your discovery signals.
+                </p>
+              )}
             </section>
           </div>
 
@@ -615,7 +680,11 @@ export default function ProfileEditor({
 
             <section className="rounded-md border border-[#d8ded1] bg-white p-4">
               <p className="text-sm font-semibold text-[#607265]">
-                Completion checklist
+                Profile completeness checklist
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[#34443a]">
+                Finish these items to keep discovery, saving, and messaging
+                trustworthy for everyone.
               </p>
               <div className="mt-3 space-y-2">
                 {quality.checklist.map((item) => (
@@ -632,9 +701,37 @@ export default function ProfileEditor({
                       />
                       {item.label}
                     </span>
-                    <span className="font-semibold">{item.points}</span>
+                    <span className="font-semibold">
+                      {item.complete ? "Done" : `${item.points} pts`}
+                    </span>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-[#d8ded1] bg-white p-4">
+              <p className="text-sm font-semibold text-[#607265]">
+                Verification
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[#34443a]">
+                Badges are synced by Tribe systems and cannot be self-assigned.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <VerificationBadges verification={verification} />
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-[#34443a]">
+                <VerificationRow
+                  complete={verification.email}
+                  label="Email verified"
+                />
+                <VerificationRow
+                  complete={verification.phone}
+                  label="Phone verified"
+                />
+                <VerificationRow
+                  complete={verification.identity}
+                  label="Identity verified"
+                />
               </div>
             </section>
 
@@ -688,5 +785,69 @@ export default function ProfileEditor({
         </section>
       </div>
     </main>
+  );
+}
+
+function SectionHeader({
+  body,
+  eyebrow,
+  icon: Icon,
+  title,
+}: {
+  body: string;
+  eyebrow: string;
+  icon?: LucideIcon;
+  title: string;
+}) {
+  return (
+    <div>
+      <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+        {Icon ? <Icon size={16} aria-hidden="true" /> : null}
+        {eyebrow}
+      </p>
+      <h2 className="mt-1 text-lg font-semibold text-[#17201b]">{title}</h2>
+      <p className="mt-1 text-sm leading-6 text-[#607265]">{body}</p>
+    </div>
+  );
+}
+
+function SignalGroup({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
+      <p className="text-xs font-semibold uppercase text-[#607265]">{label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {values.map((value) => (
+          <span
+            className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-[#34443a]"
+            key={value}
+          >
+            {value}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VerificationRow({
+  complete,
+  label,
+}: {
+  complete: boolean;
+  label: string;
+}) {
+  return (
+    <p className="flex items-center justify-between gap-3 border-b border-[#e2e6dc] pb-2 last:border-b-0 last:pb-0">
+      <span>{label}</span>
+      <span
+        className={
+          complete
+            ? "font-semibold text-[#2f5f36]"
+            : "font-semibold text-[#607265]"
+        }
+      >
+        {complete ? "Verified" : "Pending"}
+      </span>
+    </p>
   );
 }
