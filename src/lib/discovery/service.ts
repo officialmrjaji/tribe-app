@@ -13,6 +13,7 @@ import {
   getOnboardingStatus,
   type OnboardingRecord,
 } from "@/lib/onboarding/service";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { createNotification } from "@/lib/notifications/service";
 import {
   assertOwnedProfileHasMinimumPhotos,
@@ -925,6 +926,14 @@ async function createProfileSaveNotifications(
   const pairKey = [ownedProfile.account.id, target.user_id].sort().join(":");
 
   await Promise.all([
+    trackAnalyticsEvent({
+      eventType: "match_created",
+      ownedProfile,
+      properties: {
+        matchedProfileId: target.id,
+        matchedUserId: target.user_id,
+      },
+    }),
     createNotification({
       actorUserId: target.user_id,
       data: {

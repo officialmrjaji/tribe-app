@@ -1,4 +1,5 @@
 import type { User } from "@clerk/nextjs/server";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { ProfileInput } from "./schema";
 
@@ -67,12 +68,17 @@ export class ProfileQualityRequirementError extends Error {
 }
 
 type UserAccount = {
+  banned_at?: string | null;
   clerk_user_id: string;
   created_at: string;
   email: string;
   id: string;
   last_seen_at: string | null;
+  moderation_reason?: string | null;
+  moderation_status?: "active" | "banned" | "shadow_banned" | "suspended";
+  shadow_banned_at?: string | null;
   status: string;
+  suspended_until?: string | null;
   updated_at: string;
 };
 
@@ -339,6 +345,18 @@ export async function getProfileQuality(
 
   if (quality.completeness !== ownedProfile.profile.profile_completion_score) {
     await updateProfileCompletion(ownedProfile.profile.id, quality.completeness);
+    await trackAnalyticsEvent({
+      eventType:
+        quality.completeness >= 80 &&
+        ownedProfile.profile.profile_completion_score < 80
+          ? "profile_completed"
+          : "profile_completion_changed",
+      ownedProfile,
+      properties: {
+        nextCompletion: quality.completeness,
+        previousCompletion: ownedProfile.profile.profile_completion_score,
+      },
+    });
   }
 
   return quality;

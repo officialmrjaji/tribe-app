@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { ApiError, apiErrorResponse } from "@/lib/api/errors";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { profileActionSchema } from "@/lib/discovery/schema";
 import { saveDiscoveryProfile } from "@/lib/discovery/service";
 import { ProfileQualityRequirementError } from "@/lib/profile/service";
+import { assertRateLimit } from "@/lib/security/rate-limit";
 
 export async function POST(request: Request) {
   try {
@@ -25,14 +28,37 @@ export async function POST(request: Request) {
       );
     }
 
+    await assertRateLimit({
+      action: "profile_save",
+      key: `profile_save:${session.ownedProfile.account.id}`,
+      limit: 30,
+      route: "/api/profile/save",
+      userId: session.ownedProfile.account.id,
+      windowMs: 60 * 60 * 1000,
+    });
+
     const result = await saveDiscoveryProfile(
       session.ownedProfile,
       parsedPayload.data.profileId,
     );
+    await trackAnalyticsEvent({
+      eventType: "profile_saved",
+      ownedProfile: session.ownedProfile,
+      properties: {
+        profileId: parsedPayload.data.profileId,
+      },
+    });
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error(error);
+
+    if (error instanceof ApiError) {
+      return apiErrorResponse(error, {
+        fallbackMessage: "Unable to save profile.",
+        request,
+      });
+    }
 
     if (error instanceof ProfileQualityRequirementError) {
       return NextResponse.json(

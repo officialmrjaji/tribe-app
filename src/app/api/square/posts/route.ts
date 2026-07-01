@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { ApiError, apiErrorResponse } from "@/lib/api/errors";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getSquareSession, squareErrorResponse } from "@/lib/square/api";
 import { squarePostInputSchema } from "@/lib/square/schema";
 import { createSquarePost } from "@/lib/square/service";
+import { assertRateLimit } from "@/lib/security/rate-limit";
+import { recordSpamSignal } from "@/lib/security/spam";
 
 export async function POST(request: Request) {
   try {
@@ -50,14 +54,60 @@ export async function POST(request: Request) {
       );
     }
 
+    await assertRateLimit({
+      action: "square_post_create",
+      key: `square_post:${session.ownedProfile.account.id}`,
+      limit: 20,
+      route: "/api/square/posts",
+      userId: session.ownedProfile.account.id,
+      windowMs: 24 * 60 * 60 * 1000,
+    });
+    await recordSpamSignal({
+      content: [
+        parsedPayload.data.body,
+        parsedPayload.data.caption,
+        parsedPayload.data.pollQuestion,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      contentType: "square_post",
+      ownedProfile: session.ownedProfile,
+    });
+
     const post = await createSquarePost({
       imageFile,
       input: parsedPayload.data,
       ownedProfile: session.ownedProfile,
     });
+    await Promise.all([
+      trackAnalyticsEvent({
+        eventType: "square_post_created",
+        ownedProfile: session.ownedProfile,
+        properties: {
+          isAnonymous: post.isAnonymous,
+          postId: post.id,
+          postType: post.postType,
+        },
+      }),
+      trackAnalyticsEvent({
+        eventType: "square_usage",
+        ownedProfile: session.ownedProfile,
+        properties: {
+          action: "post_created",
+          postType: post.postType,
+        },
+      }),
+    ]);
 
     return NextResponse.json({ post }, { status: 201 });
   } catch (error) {
+    if (error instanceof ApiError) {
+      return apiErrorResponse(error, {
+        fallbackMessage: "Square post could not be created.",
+        request,
+      });
+    }
+
     return squareErrorResponse(error, "Square post could not be created.");
   }
 }

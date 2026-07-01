@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import {
   PremiumError,
@@ -37,6 +38,14 @@ export async function POST(request: Request) {
     const result = await verifyPremiumPurchaseForUser({
       ownedProfile: session.ownedProfile,
       reference: payload.data.reference,
+    });
+    await trackAnalyticsEvent({
+      eventType: "premium_conversion",
+      ownedProfile: session.ownedProfile,
+      properties: {
+        planCode: result.plan.code,
+        productType: result.plan.productType,
+      },
     });
 
     return NextResponse.json(result);

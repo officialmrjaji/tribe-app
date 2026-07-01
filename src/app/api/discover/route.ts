@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
@@ -69,6 +70,13 @@ export async function GET() {
     }
 
     const discovery = await getDiscoveryRecommendations(session.ownedProfile);
+    await trackAnalyticsEvent({
+      eventType: "discovery_impression",
+      ownedProfile: session.ownedProfile,
+      properties: {
+        profileCount: discovery.completed ? discovery.profiles.length : 0,
+      },
+    });
 
     return NextResponse.json(discovery);
   } catch (error) {
