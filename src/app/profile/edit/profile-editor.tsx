@@ -17,6 +17,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { VerificationBadges } from "@/components/profile/verification-badges";
+import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import {
   availabilityLabels,
   conversationStyleLabels,
@@ -513,7 +514,11 @@ export default function ProfileEditor({
                 title="Voice introduction"
               />
               {profile.voice_intro_url ? (
-                <audio className="w-full" controls src={profile.voice_intro_url} />
+                <VoiceIntroPlayer
+                  durationSeconds={profile.voice_intro_duration_seconds}
+                  label="Current voice intro"
+                  src={profile.voice_intro_url}
+                />
               ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input

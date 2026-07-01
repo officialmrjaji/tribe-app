@@ -1,0 +1,654 @@
+import { randomUUID } from "node:crypto";
+import { getDiscoveryRecommendations } from "@/lib/discovery/service";
+import { createNotification } from "@/lib/notifications/service";
+import {
+  getOnboardingStatus,
+  type OnboardingSnapshot,
+} from "@/lib/onboarding/service";
+import {
+  assertOwnedProfileHasMinimumPhotos,
+  type OwnedProfile,
+} from "@/lib/profile/service";
+import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import type { CreateVoiceRoomInput } from "./schema";
+
+export class VoiceExperienceError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "VoiceExperienceError";
+    this.status = status;
+  }
+}
+
+type VoiceSessionRow = {
+  completed_at: string | null;
+  created_at: string;
+  ends_at: string;
+  id: string;
+  initiator_profile_id: string;
+  initiator_user_id: string;
+  language_signal: string | null;
+  matched_profile_id: string;
+  matched_user_id: string;
+  matching_basis: string[];
+  reveal_profiles_after: string;
+  started_at: string;
+  status: "active" | "cancelled" | "completed";
+};
+
+type VoiceRoomRow = {
+  created_at: string;
+  description: string | null;
+  ends_at: string | null;
+  host_profile_id: string;
+  host_user_id: string;
+  id: string;
+  invite_code: string | null;
+  language: string | null;
+  max_participants: number;
+  room_type: "private" | "public" | "scheduled";
+  scheduled_at: string | null;
+  starts_at: string | null;
+  status: "cancelled" | "closed" | "open" | "scheduled";
+  title: string;
+  topic: string | null;
+  updated_at: string;
+};
+
+type VoiceRoomParticipantRow = {
+  joined_at: string;
+  left_at: string | null;
+  profile_id: string;
+  role: "host" | "listener" | "speaker";
+  room_id: string;
+  user_id: string;
+};
+
+type ProfileSummaryRow = {
+  avatar_url: string | null;
+  city: string | null;
+  country: string | null;
+  display_name: string | null;
+  id: string;
+  region: string | null;
+  user_id: string;
+  voice_intro_duration_seconds: number | null;
+  voice_intro_url: string | null;
+};
+
+export type VoiceProfileSummary = {
+  avatarUrl: string | null;
+  city: string;
+  name: string;
+  profileId: string;
+  userId: string;
+  voiceIntroDurationSeconds: number | null;
+  voiceIntroUrl: string | null;
+};
+
+export type VoiceSessionSummary = {
+  canReveal: boolean;
+  endsAt: string;
+  id: string;
+  languageSignal: string | null;
+  matchingBasis: string[];
+  otherProfile: VoiceProfileSummary | null;
+  revealProfilesAfter: string;
+  revealed: boolean;
+  startedAt: string;
+  status: string;
+};
+
+export type VoiceRoomSummary = {
+  createdAt: string;
+  description: string | null;
+  host: VoiceProfileSummary | null;
+  id: string;
+  isHost: boolean;
+  isMember: boolean;
+  language: string | null;
+  maxParticipants: number;
+  participantCount: number;
+  participants: VoiceProfileSummary[];
+  roomType: string;
+  scheduledAt: string | null;
+  status: string;
+  title: string;
+  topic: string | null;
+};
+
+export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
+  await assertOwnedProfileHasMinimumPhotos(ownedProfile);
+  const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
+
+  if (!onboarding.completed || !onboarding.response) {
+    throw new VoiceExperienceError(
+      "Complete onboarding before starting a voice match.",
+      409,
+    );
+  }
+
+  const discovery = await getDiscoveryRecommendations(ownedProfile);
+
+  if (!discovery.completed || discovery.profiles.length === 0) {
+    throw new VoiceExperienceError(
+      "No voice-compatible profiles are available right now.",
+      404,
+    );
+  }
+
+  const candidates = discovery.profiles.slice(0, 8);
+  const candidate = candidates[Math.floor(Math.random() * candidates.length)];
+  const now = new Date();
+  const endsAt = new Date(now.getTime() + 5 * 60 * 1000);
+  const supabase = createSupabaseAdminClient();
+  const { data: session, error } = await supabase
+    .from("voice_sessions")
+    .insert({
+      ends_at: endsAt.toISOString(),
+      initiator_profile_id: ownedProfile.profile.id,
+      initiator_user_id: ownedProfile.account.id,
+      language_signal: pickLanguageSignal(candidate.languages, onboarding.response),
+      matched_profile_id: candidate.id,
+      matched_user_id: candidate.userId,
+      matching_basis: candidate.reasons.slice(0, 4),
+      reveal_profiles_after: endsAt.toISOString(),
+      started_at: now.toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  const voiceSession = session as VoiceSessionRow;
+  const { error: participantError } = await supabase
+    .from("voice_session_participants")
+    .upsert(
+      [
+        {
+          profile_id: ownedProfile.profile.id,
+          session_id: voiceSession.id,
+          user_id: ownedProfile.account.id,
+        },
+        {
+          profile_id: candidate.id,
+          session_id: voiceSession.id,
+          user_id: candidate.userId,
+        },
+      ],
+      { onConflict: "session_id,user_id" },
+    );
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  await createNotification({
+    actorUserId: ownedProfile.account.id,
+    data: {
+      sessionId: voiceSession.id,
+    },
+    entityId: voiceSession.id,
+    entityType: "conversation",
+    recipientUserId: candidate.userId,
+    type: "conversation_created",
+  });
+
+  return formatVoiceSession({
+    otherProfile: null,
+    session: voiceSession,
+  });
+}
+
+export async function getVoiceSession(
+  ownedProfile: OwnedProfile,
+  sessionId: string,
+) {
+  const session = await getVoiceSessionForMember(ownedProfile, sessionId);
+  const otherUserId =
+    session.initiator_user_id === ownedProfile.account.id
+      ? session.matched_user_id
+      : session.initiator_user_id;
+  const canReveal = canRevealSession(session);
+  const otherProfile = canReveal
+    ? await getProfileSummaryByUserId(otherUserId)
+    : null;
+
+  return formatVoiceSession({
+    otherProfile,
+    session,
+  });
+}
+
+export async function revealVoiceSession(
+  ownedProfile: OwnedProfile,
+  sessionId: string,
+) {
+  const session = await getVoiceSessionForMember(ownedProfile, sessionId);
+
+  if (!canRevealSession(session)) {
+    throw new VoiceExperienceError(
+      "Profiles reveal after the 5-minute voice session ends.",
+      403,
+    );
+  }
+
+  const now = new Date().toISOString();
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("voice_sessions")
+    .update({
+      completed_at: session.completed_at ?? now,
+      status: "completed",
+      updated_at: now,
+    })
+    .eq("id", session.id);
+
+  if (error) {
+    throw error;
+  }
+
+  const { error: participantError } = await supabase
+    .from("voice_session_participants")
+    .update({ revealed_at: now })
+    .eq("session_id", session.id)
+    .eq("user_id", ownedProfile.account.id);
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  return getVoiceSession(ownedProfile, sessionId);
+}
+
+export async function listVoiceRooms(ownedProfile: OwnedProfile) {
+  const supabase = createSupabaseAdminClient();
+  const { data: participantRows, error: participantError } = await supabase
+    .from("voice_room_participants")
+    .select("room_id")
+    .eq("user_id", ownedProfile.account.id)
+    .is("left_at", null);
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  const memberRoomIds = ((participantRows ?? []) as Array<{ room_id: string }>)
+    .map((row) => row.room_id);
+  const visibleFilters = [
+    "room_type.eq.public",
+    "room_type.eq.scheduled",
+    `host_user_id.eq.${ownedProfile.account.id}`,
+  ];
+
+  if (memberRoomIds.length) {
+    visibleFilters.push(`id.in.(${memberRoomIds.join(",")})`);
+  }
+
+  const { data, error } = await supabase
+    .from("voice_rooms")
+    .select("*")
+    .or(visibleFilters.join(","))
+    .in("status", ["open", "scheduled"])
+    .order("scheduled_at", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  if (error) {
+    throw error;
+  }
+
+  return hydrateVoiceRooms(ownedProfile, (data ?? []) as VoiceRoomRow[]);
+}
+
+export async function createVoiceRoom(
+  ownedProfile: OwnedProfile,
+  input: CreateVoiceRoomInput,
+) {
+  const supabase = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const isScheduled = input.roomType === "scheduled";
+  const { data, error } = await supabase
+    .from("voice_rooms")
+    .insert({
+      description: input.description,
+      host_profile_id: ownedProfile.profile.id,
+      host_user_id: ownedProfile.account.id,
+      invite_code: input.roomType === "private" ? buildInviteCode() : null,
+      language: input.language,
+      max_participants: input.maxParticipants,
+      room_type: input.roomType,
+      scheduled_at: input.scheduledAt,
+      starts_at: isScheduled ? input.scheduledAt : now,
+      status: isScheduled ? "scheduled" : "open",
+      title: input.title,
+      topic: input.topic,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  const room = data as VoiceRoomRow;
+  const { error: participantError } = await supabase
+    .from("voice_room_participants")
+    .insert({
+      profile_id: ownedProfile.profile.id,
+      role: "host",
+      room_id: room.id,
+      user_id: ownedProfile.account.id,
+    });
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  return getVoiceRoom(ownedProfile, room.id);
+}
+
+export async function getVoiceRoom(ownedProfile: OwnedProfile, roomId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_rooms")
+    .select("*")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const room = data as VoiceRoomRow | null;
+
+  if (!room) {
+    throw new VoiceExperienceError("Voice room not found.", 404);
+  }
+
+  const isAllowed = await canAccessRoom(ownedProfile, room);
+
+  if (!isAllowed) {
+    throw new VoiceExperienceError("Voice room not found.", 404);
+  }
+
+  const rooms = await hydrateVoiceRooms(ownedProfile, [room]);
+
+  return rooms[0];
+}
+
+export async function joinVoiceRoom(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+  inviteCode?: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data: roomData, error: roomError } = await supabase
+    .from("voice_rooms")
+    .select("*")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (roomError) {
+    throw roomError;
+  }
+
+  const roomRow = roomData as VoiceRoomRow | null;
+
+  if (!roomRow) {
+    throw new VoiceExperienceError("Voice room not found.", 404);
+  }
+
+  const existingRoom = await hydrateVoiceRooms(ownedProfile, [roomRow]);
+  const room = existingRoom[0];
+
+  if (room.roomType === "private" && !room.isHost && !room.isMember) {
+    const { data, error } = await supabase
+      .from("voice_rooms")
+      .select("invite_code")
+      .eq("id", roomId)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    const expectedInviteCode = (data as { invite_code: string | null })
+      .invite_code;
+
+    if (!expectedInviteCode || expectedInviteCode !== inviteCode) {
+      throw new VoiceExperienceError("Private room invite code is required.", 403);
+    }
+  }
+
+  if (room.participantCount >= room.maxParticipants && !room.isMember) {
+    throw new VoiceExperienceError("This voice room is full.", 409);
+  }
+
+  const { error } = await supabase.from("voice_room_participants").upsert(
+    {
+      left_at: null,
+      profile_id: ownedProfile.profile.id,
+      role: room.isHost ? "host" : "listener",
+      room_id: room.id,
+      user_id: ownedProfile.account.id,
+    },
+    { onConflict: "room_id,user_id" },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  return getVoiceRoom(ownedProfile, roomId);
+}
+
+async function getVoiceSessionForMember(
+  ownedProfile: OwnedProfile,
+  sessionId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .or(
+      `initiator_user_id.eq.${ownedProfile.account.id},matched_user_id.eq.${ownedProfile.account.id}`,
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const session = data as VoiceSessionRow | null;
+
+  if (!session) {
+    throw new VoiceExperienceError("Voice session not found.", 404);
+  }
+
+  return session;
+}
+
+async function hydrateVoiceRooms(
+  ownedProfile: OwnedProfile,
+  rooms: VoiceRoomRow[],
+) {
+  if (rooms.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const roomIds = rooms.map((room) => room.id);
+  const { data: participantRows, error: participantError } = await supabase
+    .from("voice_room_participants")
+    .select("*")
+    .in("room_id", roomIds)
+    .is("left_at", null);
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  const participants = (participantRows ?? []) as VoiceRoomParticipantRow[];
+  const userIds = Array.from(
+    new Set([
+      ...rooms.map((room) => room.host_user_id),
+      ...participants.map((participant) => participant.user_id),
+    ]),
+  );
+  const profilesByUserId = await getProfilesByUserIds(userIds);
+
+  return rooms.map((room) => {
+    const roomParticipants = participants.filter(
+      (participant) => participant.room_id === room.id,
+    );
+
+    return {
+      createdAt: room.created_at,
+      description: room.description,
+      host: profilesByUserId.get(room.host_user_id) ?? null,
+      id: room.id,
+      isHost: room.host_user_id === ownedProfile.account.id,
+      isMember: roomParticipants.some(
+        (participant) => participant.user_id === ownedProfile.account.id,
+      ),
+      language: room.language,
+      maxParticipants: room.max_participants,
+      participantCount: roomParticipants.length,
+      participants: roomParticipants
+        .map((participant) => profilesByUserId.get(participant.user_id))
+        .filter((profile): profile is VoiceProfileSummary => Boolean(profile)),
+      roomType: room.room_type,
+      scheduledAt: room.scheduled_at,
+      status: room.status,
+      title: room.title,
+      topic: room.topic,
+    } satisfies VoiceRoomSummary;
+  });
+}
+
+async function canAccessRoom(ownedProfile: OwnedProfile, room: VoiceRoomRow) {
+  if (room.room_type !== "private" || room.host_user_id === ownedProfile.account.id) {
+    return true;
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_room_participants")
+    .select("room_id")
+    .eq("room_id", room.id)
+    .eq("user_id", ownedProfile.account.id)
+    .is("left_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data);
+}
+
+async function getProfileSummaryByUserId(userId: string) {
+  const profiles = await getProfilesByUserIds([userId]);
+
+  return profiles.get(userId) ?? null;
+}
+
+async function getProfilesByUserIds(userIds: string[]) {
+  if (userIds.length === 0) {
+    return new Map<string, VoiceProfileSummary>();
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      "id, user_id, display_name, avatar_url, city, region, country, voice_intro_url, voice_intro_duration_seconds",
+    )
+    .in("user_id", userIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Map(
+    ((data ?? []) as ProfileSummaryRow[]).map((profile) => [
+      profile.user_id,
+      {
+        avatarUrl: profile.avatar_url,
+        city: formatLocation(profile),
+        name: profile.display_name ?? "Tribe member",
+        profileId: profile.id,
+        userId: profile.user_id,
+        voiceIntroDurationSeconds: profile.voice_intro_duration_seconds,
+        voiceIntroUrl: profile.voice_intro_url,
+      },
+    ]),
+  );
+}
+
+function formatVoiceSession({
+  otherProfile,
+  session,
+}: {
+  otherProfile: VoiceProfileSummary | null;
+  session: VoiceSessionRow;
+}): VoiceSessionSummary {
+  const canReveal = canRevealSession(session);
+
+  return {
+    canReveal,
+    endsAt: session.ends_at,
+    id: session.id,
+    languageSignal: session.language_signal,
+    matchingBasis: session.matching_basis,
+    otherProfile: canReveal ? otherProfile : null,
+    revealProfilesAfter: session.reveal_profiles_after,
+    revealed: Boolean(otherProfile),
+    startedAt: session.started_at,
+    status:
+      session.status === "active" && new Date(session.ends_at).getTime() <= Date.now()
+        ? "ready_to_reveal"
+        : session.status,
+  };
+}
+
+function canRevealSession(session: VoiceSessionRow) {
+  return (
+    session.status === "completed" ||
+    new Date(session.reveal_profiles_after).getTime() <= Date.now()
+  );
+}
+
+function pickLanguageSignal(
+  languages: string[],
+  onboarding: OnboardingSnapshot,
+) {
+  if (languages.length) {
+    return languages[0];
+  }
+
+  if (
+    onboarding.intent === "language_exchange" ||
+    onboarding.interests.includes("languages")
+  ) {
+    return "Language exchange";
+  }
+
+  return null;
+}
+
+function formatLocation(profile: ProfileSummaryRow) {
+  return [profile.city, profile.region, profile.country]
+    .filter(Boolean)
+    .join(", ") || "Location open";
+}
+
+function buildInviteCode() {
+  return randomUUID().replaceAll("-", "").slice(0, 12);
+}

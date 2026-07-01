@@ -36,6 +36,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NotificationBadge } from "@/components/notifications/notification-badge";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
+import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
 
 const focusModes = ["Deep talk", "Soft plans", "New circle"] as const;
@@ -335,6 +336,7 @@ export default function Home() {
               { label: "Square", icon: Sparkles, href: "/square", active: false },
               { label: "Premium", icon: Crown, href: "/premium", active: false },
               { label: "AI Coach", icon: Sparkles, href: "/ai", active: false },
+              { label: "Voice", icon: Mic, href: "/voice", active: false },
               { label: "Saved", icon: Heart, href: "/saved", active: false },
               { label: "Passed", icon: History, href: "/passed", active: false },
               {
@@ -1005,7 +1007,13 @@ function SelectedProfilePanel({
               ? `, ${profile.voiceIntroDurationSeconds}s`
               : ""}
           </p>
-          <audio className="mt-3 w-full" controls src={profile.voiceIntroUrl} />
+          <div className="mt-3">
+            <VoiceIntroPlayer
+              durationSeconds={profile.voiceIntroDurationSeconds}
+              label={`${profile.name} voice intro`}
+              src={profile.voiceIntroUrl}
+            />
+          </div>
         </div>
       ) : null}
 

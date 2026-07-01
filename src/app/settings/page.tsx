@@ -5,6 +5,7 @@ import {
   Eye,
   Lock,
   MessageCircle,
+  Mic,
   Search,
   ShieldCheck,
   Sparkles,
@@ -44,6 +45,12 @@ const settingsSections = [
     href: "/messages",
     icon: MessageCircle,
     label: "Messaging",
+  },
+  {
+    body: "Start random 5-minute voice matches, create rooms, and manage voice-first profile signals.",
+    href: "/voice",
+    icon: Mic,
+    label: "Voice",
   },
   {
     body: "Manage blocked users, reports, hidden users, privacy controls, and delete-account confirmation.",

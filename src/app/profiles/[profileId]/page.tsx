@@ -10,6 +10,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
+import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getProfileVerification } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
@@ -279,11 +280,15 @@ export default async function PublicProfilePage(
                     ? `, ${publicProfile.voice_intro_duration_seconds}s`
                     : ""}
                 </p>
-                <audio
-                  className="mt-3 w-full"
-                  controls
-                  src={publicProfile.voice_intro_url}
-                />
+                <div className="mt-3">
+                  <VoiceIntroPlayer
+                    durationSeconds={publicProfile.voice_intro_duration_seconds}
+                    label={`${
+                      publicProfile.display_name ?? "Tribe member"
+                    } voice intro`}
+                    src={publicProfile.voice_intro_url}
+                  />
+                </div>
               </section>
             ) : null}
           </aside>
