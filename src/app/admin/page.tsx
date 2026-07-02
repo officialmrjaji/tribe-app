@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ApiError } from "@/lib/api/errors";
 import { getAdminDashboard, requireAdminAccess } from "@/lib/admin/service";
 
@@ -29,8 +29,12 @@ export default async function AdminPage({
     admin = await requireAdminAccess();
     dashboard = await getAdminDashboard({ query: q });
   } catch (error) {
-    if (error instanceof ApiError && [401, 403].includes(error.status)) {
-      notFound();
+    if (error instanceof ApiError && error.status === 401) {
+      redirect("/sign-in");
+    }
+
+    if (error instanceof ApiError && error.status === 403) {
+      return <AdminAccessDenied message={error.message} />;
     }
 
     throw error;
@@ -270,6 +274,45 @@ export default async function AdminPage({
               </p>
             )}
           </Panel>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function AdminAccessDenied({ message }: { message: string }) {
+  return (
+    <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
+      <div className="mx-auto flex min-h-[70vh] max-w-3xl items-center">
+        <section className="w-full rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+            <ShieldAlert size={16} />
+            Admin access
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold">
+            This account is not configured as an admin
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-[#34443a]">{message}</p>
+          <p className="mt-3 text-sm leading-6 text-[#34443a]">
+            Add this account to `TRIBE_ADMIN_EMAILS`,
+            `TRIBE_ADMIN_CLERK_USER_IDS`, Clerk public metadata, or the
+            `admin_roles` table, then restart the local server if the
+            environment changed.
+          </p>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <Link
+              className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+              href="/settings"
+            >
+              Back to settings
+            </Link>
+            <Link
+              className="flex h-10 items-center justify-center rounded-md border border-[#d8ded1] px-4 text-sm font-semibold text-[#17251f] transition hover:border-[#9dad9f] hover:bg-[#fbfaf4]"
+              href="/"
+            >
+              Open discovery
+            </Link>
+          </div>
         </section>
       </div>
     </main>

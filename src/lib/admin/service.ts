@@ -719,7 +719,7 @@ function formatReportRows(source: string, rows: unknown[]): ReportQueueItem[] {
 
 function parseList(value?: string) {
   return (value ?? "")
-    .split(",")
+    .split(/[\s,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }

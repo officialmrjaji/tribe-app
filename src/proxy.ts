@@ -18,6 +18,7 @@ const isProtectedRoute = createRouteMatcher([
   "/settings(.*)",
   "/square(.*)",
   "/voice(.*)",
+  "/api/account(.*)",
   "/api/conversations(.*)",
   "/api/admin(.*)",
   "/api/ai(.*)",

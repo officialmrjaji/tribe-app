@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import { AccountActions } from "./account-actions";
 
 const settingsSections = [
   {
@@ -124,6 +125,8 @@ export default async function SettingsPage() {
             value={`${profile.profile_completion_score}%`}
           />
         </section>
+
+        <AccountActions />
 
         <section className="mt-6 grid gap-4 md:grid-cols-2">
           {settingsSections.map((section) => {

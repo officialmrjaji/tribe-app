@@ -4,13 +4,13 @@ import {
   FileWarning,
   Lock,
   ShieldCheck,
-  Trash2,
   UserX,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { AccountDeletionRequest } from "./account-deletion-request";
 
 type BlockedUserRow = {
   blocked_user_id: string;
@@ -116,8 +116,8 @@ export default async function SafetyPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
               Review blocked users, reports, hidden users, privacy controls, and
-              delete-account confirmation. Destructive account deletion is not
-              wired in this release.
+              account deletion requests. Destructive account deletion is not
+              automatic in this release.
             </p>
           </div>
           <Link
@@ -192,29 +192,7 @@ export default async function SafetyPage() {
           </section>
         </section>
 
-        <section className="mt-6 rounded-lg border border-[#ef8f7a] bg-white p-4 shadow-sm">
-          <p className="flex items-center gap-2 text-sm font-semibold text-[#8a3325]">
-            <Trash2 size={16} />
-            Delete account
-          </p>
-          <p className="mt-2 text-sm leading-6 text-[#34443a]">
-            This release includes confirmation only. Account deletion must be
-            completed through a dedicated server flow with Clerk and Supabase
-            cleanup before it becomes active.
-          </p>
-          <details className="mt-4 rounded-md border border-[#f0c0b4] bg-[#fff8f5] p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-[#8a3325]">
-              I understand this would permanently remove my account
-            </summary>
-            <button
-              className="mt-3 flex h-10 items-center justify-center rounded-md border border-[#ef8f7a] px-4 text-sm font-semibold text-[#8a3325] opacity-60"
-              disabled
-              type="button"
-            >
-              Delete account unavailable in this release
-            </button>
-          </details>
-        </section>
+        <AccountDeletionRequest />
       </div>
     </main>
   );
