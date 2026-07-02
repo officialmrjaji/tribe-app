@@ -67,6 +67,11 @@ type ProfileReference = {
   user_id: string;
 };
 
+type UserReference = {
+  created_at: string;
+  user_id: string;
+};
+
 type ProfilePhotoRow = {
   image_url: string;
   profile_id: string;
@@ -332,6 +337,151 @@ export async function getSavedDiscoveryProfiles(
   return { completed: true, profiles };
 }
 
+export async function getLikedDiscoveryProfiles(
+  ownedProfile: OwnedProfile,
+): Promise<DiscoveryCollectionResult> {
+  return getSavedDiscoveryProfiles(ownedProfile);
+}
+
+export async function getInboundLikedDiscoveryProfiles(
+  ownedProfile: OwnedProfile,
+): Promise<DiscoveryCollectionResult> {
+  const currentOnboarding = await getCompletedCurrentOnboarding(ownedProfile);
+
+  if (!currentOnboarding) {
+    return { completed: false, profiles: [] };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("saved_profiles")
+    .select("viewer_user_id, created_at")
+    .eq("saved_user_id", ownedProfile.account.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const references = await buildProfileReferencesFromUserReferences(
+    ((data ?? []) as Array<{
+      created_at: string;
+      viewer_user_id: string;
+    }>).map((row) => ({
+      created_at: row.created_at,
+      user_id: row.viewer_user_id,
+    })),
+  );
+
+  const profiles = await buildInteractionCollection({
+    currentOnboarding,
+    isSaved: false,
+    ownedProfile,
+    references,
+  });
+
+  return { completed: true, profiles };
+}
+
+export async function getInboundLikedProfileCount(ownedProfile: OwnedProfile) {
+  const currentOnboarding = await getCompletedCurrentOnboarding(ownedProfile);
+
+  if (!currentOnboarding) {
+    return 0;
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("saved_profiles")
+    .select("viewer_user_id, created_at")
+    .eq("saved_user_id", ownedProfile.account.id);
+
+  if (error) {
+    throw error;
+  }
+
+  const references = await buildProfileReferencesFromUserReferences(
+    ((data ?? []) as Array<{
+      created_at: string;
+      viewer_user_id: string;
+    }>).map((row) => ({
+      created_at: row.created_at,
+      user_id: row.viewer_user_id,
+    })),
+  );
+
+  const profiles = await buildInteractionCollection({
+    currentOnboarding,
+    isSaved: false,
+    ownedProfile,
+    references,
+  });
+
+  return profiles.length;
+}
+
+export async function getMutualLikedDiscoveryProfiles(
+  ownedProfile: OwnedProfile,
+): Promise<DiscoveryCollectionResult> {
+  const currentOnboarding = await getCompletedCurrentOnboarding(ownedProfile);
+
+  if (!currentOnboarding) {
+    return { completed: false, profiles: [] };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const [outgoingResult, incomingResult] = await Promise.all([
+    supabase
+      .from("saved_profiles")
+      .select("saved_profile_id, saved_user_id, created_at")
+      .eq("viewer_user_id", ownedProfile.account.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("saved_profiles")
+      .select("viewer_user_id, created_at")
+      .eq("saved_user_id", ownedProfile.account.id),
+  ]);
+
+  if (outgoingResult.error) {
+    throw outgoingResult.error;
+  }
+
+  if (incomingResult.error) {
+    throw incomingResult.error;
+  }
+
+  const incomingByUserId = new Map(
+    ((incomingResult.data ?? []) as Array<{
+      created_at: string;
+      viewer_user_id: string;
+    }>).map((row) => [row.viewer_user_id, row.created_at]),
+  );
+
+  const references = ((outgoingResult.data ?? []) as Array<{
+    created_at: string;
+    saved_profile_id: string;
+    saved_user_id: string;
+  }>)
+    .filter((row) => incomingByUserId.has(row.saved_user_id))
+    .map((row) => ({
+      created_at: latestTimestamp(
+        row.created_at,
+        incomingByUserId.get(row.saved_user_id),
+      ),
+      id: row.saved_profile_id,
+      user_id: row.saved_user_id,
+    }));
+
+  const profiles = await buildInteractionCollection({
+    currentOnboarding,
+    isSaved: true,
+    ownedProfile,
+    references,
+  });
+
+  return { completed: true, profiles };
+}
+
 export async function getPassedDiscoveryProfiles(
   ownedProfile: OwnedProfile,
 ): Promise<DiscoveryCollectionResult> {
@@ -406,7 +556,7 @@ export async function saveDiscoveryProfile(
 
   await createProfileSaveNotifications(ownedProfile, target);
 
-  return { profileId: target.id, saved: true };
+  return { liked: true, profileId: target.id, saved: true };
 }
 
 export async function passDiscoveryProfile(
@@ -793,8 +943,26 @@ async function buildInteractionCollection({
     return [];
   }
 
+  const [blockedByViewer, blockedViewer] = await Promise.all([
+    fetchBlockedByViewer(ownedProfile.account.id),
+    fetchBlockedViewer(ownedProfile.account.id),
+  ]);
+  const blockedUserIds = new Set([
+    ...blockedByViewer.map((row) => row.blocked_user_id),
+    ...blockedViewer.map((row) => row.blocker_user_id),
+  ]);
+  const visibleReferences = references.filter(
+    (reference) =>
+      reference.user_id !== ownedProfile.account.id &&
+      !blockedUserIds.has(reference.user_id),
+  );
+
+  if (visibleReferences.length === 0) {
+    return [];
+  }
+
   const supabase = createSupabaseAdminClient();
-  const profileIds = references.map((reference) => reference.id);
+  const profileIds = visibleReferences.map((reference) => reference.id);
   const { data: profileRows, error: profileError } = await supabase
     .from("profiles")
     .select("*")
@@ -836,7 +1004,7 @@ async function buildInteractionCollection({
     ]),
   );
 
-  return references
+  return visibleReferences
     .map((reference, index) => {
       const candidate = profilesById.get(reference.id);
       const candidateOnboarding = onboardingByProfileId.get(reference.id);
@@ -862,6 +1030,71 @@ async function buildInteractionCollection({
     .filter(
       (profile): profile is DiscoveryCollectionProfile => profile !== null,
     );
+}
+
+async function buildProfileReferencesFromUserReferences(
+  userReferences: UserReference[],
+) {
+  if (userReferences.length === 0) {
+    return [];
+  }
+
+  const latestByUserId = new Map<string, UserReference>();
+
+  userReferences.forEach((reference) => {
+    const existing = latestByUserId.get(reference.user_id);
+
+    if (
+      !existing ||
+      new Date(reference.created_at).getTime() >
+        new Date(existing.created_at).getTime()
+    ) {
+      latestByUserId.set(reference.user_id, reference);
+    }
+  });
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, user_id")
+    .in("user_id", Array.from(latestByUserId.keys()))
+    .not("onboarding_completed_at", "is", null)
+    .neq("visibility", "private");
+
+  if (error) {
+    throw error;
+  }
+
+  const profileByUserId = new Map(
+    ((data ?? []) as Array<{ id: string; user_id: string }>).map((profile) => [
+      profile.user_id,
+      profile,
+    ]),
+  );
+
+  return Array.from(latestByUserId.values())
+    .map((reference) => {
+      const profile = profileByUserId.get(reference.user_id);
+
+      if (!profile) {
+        return null;
+      }
+
+      return {
+        created_at: reference.created_at,
+        id: profile.id,
+        user_id: profile.user_id,
+      };
+    })
+    .filter((reference): reference is ProfileReference => reference !== null);
+}
+
+function latestTimestamp(left: string, right?: string) {
+  if (!right) {
+    return left;
+  }
+
+  return new Date(left).getTime() >= new Date(right).getTime() ? left : right;
 }
 
 async function getTargetProfile(ownedProfile: OwnedProfile, profileId: string) {

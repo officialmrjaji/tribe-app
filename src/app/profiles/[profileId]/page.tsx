@@ -158,10 +158,10 @@ export default async function PublicProfilePage(
         <header className="border-b border-[#d8ded1] pb-5">
           <Link
             className="inline-flex items-center gap-2 text-sm font-semibold text-[#607265] transition hover:text-[#17251f]"
-            href="/square"
+            href="/explore"
           >
             <ArrowLeft size={16} />
-            Square
+            Explore
           </Link>
           <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
             {primaryImage ? (
@@ -179,7 +179,7 @@ export default async function PublicProfilePage(
             )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-[#607265]">
-                Square profile
+                Member profile
               </p>
               <h1 className="mt-1 text-2xl font-semibold">
                 {publicProfile.display_name ?? "Tribe member"}

@@ -481,7 +481,7 @@ export default function ConversationThread({
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[#34443a]">
                     Start with something specific from the profile signals that
-                    made this mutual save feel worth exploring.
+                    made this mutual like feel worth exploring.
                   </p>
                 </div>
               ) : (

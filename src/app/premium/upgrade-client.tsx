@@ -37,9 +37,9 @@ type RestorePayload = {
 
 const premiumFeatures = [
   {
-    body: "Know who already signaled interest before you decide who to save.",
+    body: "Know who already signaled interest before you decide who to like.",
     icon: ShieldCheck,
-    label: "See who saved or liked you",
+    label: "See who liked you",
   },
   {
     body: "Undo passes without being limited to only the most recent action.",
@@ -252,7 +252,7 @@ export default function UpgradePageClient({
             <h2 className="text-xl font-semibold">Premium gates</h2>
             <div className="mt-4 space-y-2">
               {Object.entries({
-                "See who saved you": status.featureGates.seeWhoSavedYou,
+                "See who liked you": status.featureGates.seeWhoLikedYou,
                 "Unlimited undo pass": status.featureGates.unlimitedUndoPass,
                 "Advanced filters": status.featureGates.advancedFilters,
                 "Profile analytics": status.featureGates.profileAnalytics,

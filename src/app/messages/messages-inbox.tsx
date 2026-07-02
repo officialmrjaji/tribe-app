@@ -164,17 +164,17 @@ export default function MessagesInbox() {
               ) : null}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
-              Conversations open only after both people save each other.
+              Conversations open only after both people like each other.
             </p>
           </div>
 
           <nav className="grid grid-cols-2 gap-2 sm:flex">
             <Link
               className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-              href="/saved"
+              href="/explore?tab=liked"
             >
               <Heart size={16} />
-              Saved
+              Liked
             </Link>
             <Link
               className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
@@ -296,16 +296,16 @@ function InboxEmptyState() {
         Messaging opens only when interest is mutual.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Save profiles that feel aligned. If they save you too, the Message
-        button appears in saved profiles. Blocks, incomplete profiles, and
-        one-sided saves stay closed for safety.
+        Like profiles that feel aligned. If they like you too, the Message
+        button appears in matched profiles. Blocks, incomplete profiles, and
+        one-sided likes stay closed for safety.
       </p>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         <Link
           className="inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-          href="/saved"
+          href="/explore?tab=liked"
         >
-          Open saved profiles
+          Open liked profiles
         </Link>
         <Link
           className="inline-flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"

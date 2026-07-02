@@ -8,8 +8,8 @@ import {
   Coffee,
   Compass,
   Crown,
+  Eye,
   Heart,
-  History,
   LoaderCircle,
   MapPin,
   MessageCircle,
@@ -181,7 +181,7 @@ export default function Home() {
     setActionMessage("");
 
     try {
-      const response = await fetch("/api/profile/save", {
+      const response = await fetch("/api/profile/like", {
         body: JSON.stringify({ profileId }),
         headers: {
           "Content-Type": "application/json",
@@ -192,7 +192,7 @@ export default function Home() {
 
       if (!response.ok) {
         throw new Error(
-          getActionFailureMessage(payload, "Profile could not be saved."),
+          getActionFailureMessage(payload, "Profile could not be liked."),
         );
       }
 
@@ -207,11 +207,11 @@ export default function Home() {
         ),
       );
       setActionMessage(
-        `${savedProfile?.name ?? "Profile"} was added to saved profiles.`,
+        `${savedProfile?.name ?? "Profile"} was added to liked profiles.`,
       );
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "Profile could not be saved.",
+        error instanceof Error ? error.message : "Profile could not be liked.",
       );
     } finally {
       setPendingActionProfileId(null);
@@ -337,8 +337,7 @@ export default function Home() {
               { label: "Premium", icon: Crown, href: "/premium", active: false },
               { label: "AI Coach", icon: Sparkles, href: "/ai", active: false },
               { label: "Voice", icon: Mic, href: "/voice", active: false },
-              { label: "Saved", icon: Heart, href: "/saved", active: false },
-              { label: "Passed", icon: History, href: "/passed", active: false },
+              { label: "Explore", icon: Heart, href: "/explore", active: false },
               {
                 label: "Messages",
                 icon: MessageCircle,
@@ -432,17 +431,10 @@ export default function Home() {
               </Link>
               <Link
                 className="relative flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                href="/saved"
+                href="/explore"
               >
                 <Heart size={17} />
-                Saved
-              </Link>
-              <Link
-                className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                href="/passed"
-              >
-                <History size={17} />
-                Passed
+                Explore
               </Link>
               <Link
                 className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
@@ -522,7 +514,7 @@ export default function Home() {
                 </button>
                 <Link
                   className="flex h-9 items-center justify-center rounded-md border border-[#cbd4c6] px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                  href="/passed"
+                  href="/explore?tab=passed"
                 >
                   Passed
                 </Link>
@@ -544,7 +536,7 @@ export default function Home() {
                     No matches for this filter
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                    Try the full discovery queue, or check saved and passed
+                    Try the full discovery queue, or check liked and passed
                     profiles while more people complete onboarding.
                   </p>
                   <button
@@ -703,8 +695,16 @@ export default function Home() {
                         ) : (
                           <Heart size={16} />
                         )}
-                        {isSaved ? "Saved" : "Save"}
+                        {isSaved ? "Liked" : "Like"}
                       </button>
+                      <Link
+                        className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                        href={`/profiles/${profile.id}`}
+                        aria-label={`View ${profile.name}`}
+                      >
+                        <Eye size={18} />
+                        View
+                      </Link>
                       <button
                         className="flex h-10 w-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
                         disabled={isPending}
@@ -1028,7 +1028,7 @@ function SelectedProfilePanel({
         </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-[1fr_44px] gap-2">
+      <div className="mt-5 grid grid-cols-[1fr_76px_44px] gap-2">
         <button
           className={cx(
             "flex h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition disabled:opacity-60",
@@ -1047,8 +1047,16 @@ function SelectedProfilePanel({
           ) : (
             <Heart size={17} />
           )}
-          {isSaved ? "Saved" : "Save Profile"}
+          {isSaved ? "Liked" : "Like Profile"}
         </button>
+        <Link
+          className="flex h-11 items-center justify-center gap-1 rounded-md border border-[#cbd4c6] bg-white text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+          href={`/profiles/${profile.id}`}
+          aria-label={`View ${profile.name}`}
+        >
+          <Eye size={17} />
+          View
+        </Link>
         <button
           className="flex h-11 items-center justify-center rounded-md bg-[#f6c66f] text-[#17201b] transition hover:bg-[#edb654] disabled:opacity-60"
           disabled={isPending}
@@ -1129,7 +1137,7 @@ function EmptyDiscovery({
         ) : null}
         <Link
           className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-          href="/passed"
+          href="/explore?tab=passed"
         >
           View passed profiles
         </Link>

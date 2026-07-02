@@ -274,7 +274,7 @@ function NotificationsEmptyState() {
         Important activity will stay easy to review.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Saves, mutual saves, conversation starts, and new messages will appear
+        Likes, mutual likes, conversation starts, and new messages will appear
         here. Push and email notifications are intentionally off in this build.
       </p>
       <Link

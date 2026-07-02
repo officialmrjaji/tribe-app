@@ -789,7 +789,7 @@ async function assertMutualSavePermission(currentUserId: string, targetUserId: s
 
   if (!currentSavedTarget.data || !targetSavedCurrent.data) {
     throw new MessagingError(
-      "Messaging unlocks after both people save each other.",
+      "Messaging unlocks after both people like each other.",
       403,
     );
   }

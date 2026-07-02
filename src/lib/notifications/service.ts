@@ -222,18 +222,18 @@ function formatNotification(
   if (row.type === "mutual_save") {
     return {
       ...baseNotification(row, actorName),
-      href: profileId ? "/saved" : "/saved",
-      message: `You and ${displayName} saved each other. Messaging is now available.`,
-      title: "Mutual save",
+      href: profileId ? "/explore?tab=matches" : "/explore?tab=matches",
+      message: `You and ${displayName} liked each other. Messaging is now available.`,
+      title: "Mutual like",
     };
   }
 
   if (row.type === "profile_saved") {
     return {
       ...baseNotification(row, actorName),
-      href: "/saved",
-      message: `${displayName} saved your profile.`,
-      title: "Profile saved",
+      href: "/explore?tab=liked-me",
+      message: `${displayName} liked your profile.`,
+      title: "Profile liked",
     };
   }
 

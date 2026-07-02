@@ -370,7 +370,7 @@ export default function ProfileEditor({
               <SectionHeader
                 eyebrow="About"
                 title="Core profile"
-                body="Name, location, and bio give people enough context before they save or message."
+                body="Name, location, and bio give people enough context before they like or message."
               />
               <label className="block">
                 <span className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
@@ -677,7 +677,7 @@ export default function ProfileEditor({
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#34443a]">
                   {photosNeeded} more photo{photosNeeded === 1 ? "" : "s"}{" "}
-                  needed before you can appear in recommendations, save
+                  needed before you can appear in recommendations, like
                   profiles, or start conversations.
                 </p>
               </section>
@@ -688,7 +688,7 @@ export default function ProfileEditor({
                 Profile completeness checklist
               </p>
               <p className="mt-1 text-sm leading-6 text-[#34443a]">
-                Finish these items to keep discovery, saving, and messaging
+                Finish these items to keep discovery, liking, and messaging
                 trustworthy for everyone.
               </p>
               <div className="mt-3 space-y-2">

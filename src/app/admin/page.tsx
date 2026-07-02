@@ -152,7 +152,7 @@ export default async function AdminPage({
                 value={dashboard.analytics.averageProfileCompletion}
               />
               <MiniMetric
-                label="Save rate base"
+                label="Like rate base"
                 value={dashboard.analytics.saves7d}
               />
               <MiniMetric

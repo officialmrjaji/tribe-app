@@ -669,7 +669,7 @@ function buildUsageCounterDefinitions(isPremium: boolean) {
     },
     {
       key: "daily_saves",
-      label: "Daily saves",
+      label: "Daily likes",
       limit: isPremium ? 50 : 8,
       periodEnd: endOfDay(now),
       periodStart: startOfDay(now),

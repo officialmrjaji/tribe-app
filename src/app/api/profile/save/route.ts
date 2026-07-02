@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     if (!parsedPayload.success) {
       return NextResponse.json(
-        { error: "Invalid save payload", issues: parsedPayload.error.issues },
+        { error: "Invalid like payload", issues: parsedPayload.error.issues },
         { status: 400 },
       );
     }
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     if (error instanceof ApiError) {
       return apiErrorResponse(error, {
-        fallbackMessage: "Unable to save profile.",
+        fallbackMessage: "Unable to like profile.",
         request,
       });
     }
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: "Unable to save profile." },
+      { error: "Unable to like profile." },
       { status: 500 },
     );
   }

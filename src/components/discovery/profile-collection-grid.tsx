@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  Eye,
   Heart,
   LoaderCircle,
   MapPin,
@@ -283,37 +284,47 @@ export function ProfileCollectionGrid({
                 </div>
               </div>
 
-              {restorePassed ? (
-                <button
-                  className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                  disabled={restoringProfileId === profile.id}
-                  onClick={() => restoreProfile(profile)}
-                  type="button"
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <Link
+                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                  href={`/profiles/${profile.id}`}
                 >
-                  {restoringProfileId === profile.id ? (
-                    <LoaderCircle className="animate-spin" size={16} />
-                  ) : (
-                    <RefreshCcw size={16} />
-                  )}
-                  Restore to discovery
-                </button>
-              ) : null}
+                  <Eye size={16} />
+                  View
+                </Link>
 
-              {allowMessaging && !restorePassed ? (
-                <button
-                  className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                  disabled={messagingProfileId === profile.id}
-                  onClick={() => startConversation(profile)}
-                  type="button"
-                >
-                  {messagingProfileId === profile.id ? (
-                    <LoaderCircle className="animate-spin" size={16} />
-                  ) : (
-                    <MessageCircle size={16} />
-                  )}
-                  Message
-                </button>
-              ) : null}
+                {restorePassed ? (
+                  <button
+                    className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
+                    disabled={restoringProfileId === profile.id}
+                    onClick={() => restoreProfile(profile)}
+                    type="button"
+                  >
+                    {restoringProfileId === profile.id ? (
+                      <LoaderCircle className="animate-spin" size={16} />
+                    ) : (
+                      <RefreshCcw size={16} />
+                    )}
+                    Restore
+                  </button>
+                ) : null}
+
+                {allowMessaging && !restorePassed ? (
+                  <button
+                    className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
+                    disabled={messagingProfileId === profile.id}
+                    onClick={() => startConversation(profile)}
+                    type="button"
+                  >
+                    {messagingProfileId === profile.id ? (
+                      <LoaderCircle className="animate-spin" size={16} />
+                    ) : (
+                      <MessageCircle size={16} />
+                    )}
+                    Message
+                  </button>
+                ) : null}
+              </div>
             </article>
           ))}
         </section>

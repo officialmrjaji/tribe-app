@@ -1,33 +1,5 @@
-import { Heart } from "lucide-react";
 import { redirect } from "next/navigation";
-import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import { getSavedDiscoveryProfiles } from "@/lib/discovery/service";
-import { ProfileCollectionPage } from "@/components/discovery/profile-collection-page";
 
-export default async function SavedProfilesPage() {
-  const session = await getCurrentOwnedProfile();
-
-  if ("error" in session) {
-    redirect("/sign-in");
-  }
-
-  const savedProfiles = await getSavedDiscoveryProfiles(session.ownedProfile);
-
-  if (!savedProfiles.completed) {
-    redirect("/onboarding");
-  }
-
-  return (
-    <ProfileCollectionPage
-      accentLabel="Saved"
-      description="People you marked as worth returning to, with the same personality-first signals from discovery."
-      emptyBody="Use Save when someone's values, goals, and rhythm feel worth revisiting. Mutual saves can unlock messaging when both profiles meet safety and quality requirements."
-      emptyTitle="Your saved list is still open."
-      eyebrow="Discovery library"
-      icon={Heart}
-      allowMessaging
-      profiles={savedProfiles.profiles}
-      title="Saved profiles"
-    />
-  );
+export default function SavedProfilesPage() {
+  redirect("/explore?tab=liked");
 }

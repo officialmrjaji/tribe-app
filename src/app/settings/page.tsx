@@ -36,13 +36,13 @@ const settingsSections = [
     label: "Discovery",
   },
   {
-    body: "Review in-app alerts for saves, matches, conversations, and messages.",
+    body: "Review in-app alerts for likes, matches, conversations, and messages.",
     href: "/notifications",
     icon: Bell,
     label: "Notifications",
   },
   {
-    body: "Messaging stays permission-based: conversations open after mutual saves and respect blocks.",
+    body: "Messaging stays permission-based: conversations open after mutual likes and respect blocks.",
     href: "/messages",
     icon: MessageCircle,
     label: "Messaging",
