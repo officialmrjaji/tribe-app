@@ -149,14 +149,14 @@ export default function MessagesInbox() {
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <MessageCircle size={16} />
               Inbox
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
-              Messages
+              Chats
               {unreadTotal > 0 ? (
                 <span className="ml-2 rounded-md bg-[#f6c66f] px-2 py-1 text-sm font-bold text-[#17201b]">
                   {unreadTotal}
@@ -279,7 +279,7 @@ function InboxErrorState({ message }: { message: string }) {
     <section className="mt-6 rounded-lg border border-[#ef8f7a] bg-white p-5 shadow-sm">
       <p className="flex items-center gap-2 text-sm font-semibold text-[#8a3325]">
         <LoaderCircle size={16} />
-        Messages need attention
+        Chats need attention
       </p>
       <p className="mt-3 text-sm leading-6 text-[#34443a]">{message}</p>
     </section>
@@ -293,10 +293,10 @@ function InboxEmptyState() {
         No conversations yet
       </p>
       <h2 className="mt-1 text-xl font-semibold">
-        Messaging opens only when interest is mutual.
+        Chats open only when interest is mutual.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Like profiles that feel aligned. If they like you too, the Message
+        Like profiles that feel aligned. If they like you too, the Chat
         button appears in matched profiles. Blocks, incomplete profiles, and
         one-sided likes stay closed for safety.
       </p>
@@ -311,7 +311,7 @@ function InboxEmptyState() {
           className="inline-flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
           href="/"
         >
-          Return to discovery
+          Return to People
         </Link>
       </div>
     </section>

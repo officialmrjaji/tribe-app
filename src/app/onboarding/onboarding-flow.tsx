@@ -266,7 +266,7 @@ export default function OnboardingFlow({
                   ) : (
                     <Compass size={17} />
                   )}
-                  Open discovery
+                  Open People
                 </button>
               )}
             </footer>

@@ -200,7 +200,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Mic size={16} />

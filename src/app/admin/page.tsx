@@ -309,7 +309,7 @@ function AdminAccessDenied({ message }: { message: string }) {
               className="flex h-10 items-center justify-center rounded-md border border-[#d8ded1] px-4 text-sm font-semibold text-[#17251f] transition hover:border-[#9dad9f] hover:bg-[#fbfaf4]"
               href="/"
             >
-              Open discovery
+              Open People
             </Link>
           </div>
         </section>

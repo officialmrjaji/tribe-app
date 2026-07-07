@@ -144,7 +144,7 @@ export default function NotificationsPage() {
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Bell size={16} />
@@ -281,7 +281,7 @@ function NotificationsEmptyState() {
         className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
         href="/"
       >
-        Open discovery
+        Open People
       </Link>
     </section>
   );

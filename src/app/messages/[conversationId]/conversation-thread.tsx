@@ -389,7 +389,7 @@ export default function ConversationThread({
               href="/messages"
             >
               <ArrowLeft size={16} />
-              Messages
+              Chats
             </Link>
             <div className="mt-4 flex items-center gap-3">
               <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#17251f] text-white">

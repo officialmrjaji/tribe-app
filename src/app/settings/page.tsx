@@ -33,7 +33,7 @@ const settingsSections = [
     body: "Tune whether you appear in recommendations and keep your profile quality above launch standards.",
     href: "/profile/edit",
     icon: Search,
-    label: "Discovery",
+    label: "People visibility",
   },
   {
     body: "Review in-app notifications for likes, matches, conversations, and messages.",
@@ -92,7 +92,7 @@ export default async function SettingsPage() {
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Eye size={16} />

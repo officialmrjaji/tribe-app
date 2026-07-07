@@ -157,14 +157,14 @@ export function ProfileCollectionGrid({
             All visible passed profiles are restored.
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-            Restored profiles can appear in discovery again when they match the
+            Restored profiles can appear in People again when they match the
             current recommendation filters.
           </p>
           <Link
             className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
             href="/"
           >
-            Open discovery
+            Open People
           </Link>
         </section>
       ) : (

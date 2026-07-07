@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AnalyticsSession } from "@/components/analytics/analytics-session";
+import { NavigationFrame } from "@/components/navigation/navigation-frame";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,9 +29,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const app = isClerkConfigured ? (
-    <ClerkProvider>{children}</ClerkProvider>
+    <ClerkProvider>
+      <NavigationFrame>{children}</NavigationFrame>
+    </ClerkProvider>
   ) : (
-    children
+    <NavigationFrame>{children}</NavigationFrame>
   );
 
   return (

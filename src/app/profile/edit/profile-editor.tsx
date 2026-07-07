@@ -342,7 +342,7 @@ export default function ProfileEditor({
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <h1 className="mt-2 text-2xl font-semibold">Edit profile</h1>
             <p className="mt-2 text-sm leading-6 text-[#34443a]">
@@ -669,13 +669,13 @@ export default function ProfileEditor({
               {quality.completeness < 80 ? (
                 <p className="mt-3 text-sm leading-6 text-[#8a3325]">
                   {quality.hasMinimumPhotos
-                    ? "Discovery unlocks at 80%."
+                    ? "People unlocks at 80%."
                     : "Upload at least 3 real profile photos to unlock discovery."}
                 </p>
               ) : (
                 <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#2f5f36]">
                   <Check size={15} />
-                  Discovery ready
+                  People ready
                 </p>
               )}
             </section>

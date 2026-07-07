@@ -44,7 +44,7 @@ export function ProfileCollectionPage({
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Icon size={16} />
@@ -80,7 +80,7 @@ export function ProfileCollectionPage({
               href="/messages"
             >
               <MessageCircle size={16} />
-              Messages
+              Chats
             </Link>
             <Link
               className="relative flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
@@ -106,7 +106,7 @@ export function ProfileCollectionPage({
               className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
               href="/"
             >
-              Open discovery
+              Open People
             </Link>
           </section>
         ) : (

@@ -1,13 +1,10 @@
 "use client";
 
 import {
-  Bell,
   BookOpen,
   CalendarDays,
   Check,
   Coffee,
-  Compass,
-  Crown,
   Eye,
   Heart,
   LoaderCircle,
@@ -18,7 +15,6 @@ import {
   Palette,
   RefreshCcw,
   Search,
-  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -27,13 +23,11 @@ import {
   Users,
   X,
   Zap,
-  type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { NotificationBadge } from "@/components/notifications/notification-badge";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
@@ -306,7 +300,7 @@ export default function Home() {
           : [lastPassedProfile, ...currentProfiles],
       );
       setSelectedId(lastPassedProfile.id);
-      setActionMessage(`${lastPassedProfile.name} is back in discovery.`);
+      setActionMessage(`${lastPassedProfile.name} is back in People.`);
       setLastPassedProfile(null);
     } catch (error) {
       setActionError(
@@ -327,98 +321,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#f6f7f1] text-[#17201b]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)_340px]">
-        <aside className="border-b border-[#d8ded1] bg-[#17251f] px-4 py-4 text-[#f7f4e9] lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between lg:block">
-            <div>
-              <p className="text-xs font-medium uppercase text-[#acc7bc]">
-                Tribe
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold">Discovery</h1>
-            </div>
-            <Link
-              className="relative flex h-10 w-10 items-center justify-center rounded-md border border-[#385046] text-[#f7f4e9] transition hover:bg-[#22362e] lg:hidden"
-              href="/notifications"
-              aria-label="Notifications"
-            >
-              <Bell size={18} />
-              <NotificationBadge />
-            </Link>
-          </div>
-
-          <nav className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1">
-            {[
-              { label: "Discover", icon: Compass, href: "/", active: true },
-              { label: "Square", icon: Sparkles, href: "/square", active: false },
-              { label: "Premium", icon: Crown, href: "/premium", active: false },
-              { label: "AI Coach", icon: Sparkles, href: "/ai", active: false },
-              { label: "Voice Rooms", icon: Mic, href: "/voice", active: false },
-              { label: "Connections", icon: Heart, href: "/explore", active: false },
-              {
-                label: "Messages",
-                icon: MessageCircle,
-                href: "/messages",
-                active: false,
-              },
-              {
-                label: "Notifications",
-                icon: Bell,
-                href: "/notifications",
-                active: false,
-                hasBadge: true,
-              },
-              {
-                label: "Profile",
-                icon: UserRound,
-                href: "/profile/edit",
-                active: false,
-              },
-              {
-                label: "Settings",
-                icon: Settings,
-                href: "/settings",
-                active: false,
-              },
-              {
-                label: "Safety",
-                icon: ShieldCheck,
-                href: "/safety",
-                active: false,
-              },
-            ].map((item) => (
-              <NavButton key={item.label} item={item} />
-            ))}
-          </nav>
-
-          <div className="mt-6 hidden border-t border-[#385046] pt-5 lg:block">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <SlidersHorizontal size={17} />
-              Signal Mix
-            </div>
-            <div className="mt-4 space-y-4">
-              {[
-                ["Conversation depth", 88],
-                ["Plan reliability", 74],
-                ["Social overlap", 67],
-              ].map(([label, value]) => (
-                <label key={label} className="block text-sm text-[#dce7e2]">
-                  <span className="flex items-center justify-between">
-                    <span>{label}</span>
-                    <span>{value}%</span>
-                  </span>
-                  <input
-                    className="mt-2 h-2 w-full accent-[#f6c66f]"
-                    defaultValue={value}
-                    max="100"
-                    min="0"
-                    type="range"
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        </aside>
-
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8">
           <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
@@ -426,8 +329,11 @@ export default function Home() {
                 Personality-first matches
               </p>
               <h2 className="mt-1 text-2xl font-semibold text-[#17201b]">
-                Find people by pace, values, and social texture.
+                People
               </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
+                Find people by pace, values, and social texture.
+              </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <label className="flex h-11 min-w-0 items-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm shadow-sm sm:w-72">
@@ -443,7 +349,7 @@ export default function Home() {
                 href="/messages"
               >
                 <MessageCircle size={17} />
-                Messages
+                Chats
               </Link>
               <Link
                 className="relative flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
@@ -457,48 +363,73 @@ export default function Home() {
                 href="/profile/edit"
               >
                 <UserRound size={17} />
-                Edit Profile
+                Edit profile
               </Link>
             </div>
           </header>
 
-          <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              {filterOptions.map((option) => (
-                <button
-                  key={option}
-                  className={cx(
-                    "h-10 rounded-md border px-4 text-sm font-semibold transition",
-                    activeFilter === option
-                      ? "border-[#17251f] bg-[#17251f] text-white"
-                      : "border-[#cbd4c6] bg-white text-[#34443a] hover:border-[#8fa298]",
-                  )}
-                  onClick={() => setActiveFilter(option)}
-                  type="button"
-                >
-                  {option}
-                </button>
-              ))}
+          <section className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                <SlidersHorizontal size={16} />
+                People filters
+              </p>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="grid grid-cols-2 gap-2 sm:flex">
+                  {filterOptions.map((option) => (
+                    <button
+                      key={option}
+                      className={cx(
+                        "h-10 rounded-md border px-4 text-sm font-semibold transition",
+                        activeFilter === option
+                          ? "border-[#17251f] bg-[#17251f] text-white"
+                          : "border-[#cbd4c6] bg-white text-[#34443a] hover:border-[#8fa298]",
+                      )}
+                      onClick={() => setActiveFilter(option)}
+                      type="button"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 rounded-md border border-[#cbd4c6] bg-white p-1">
+                  {focusModes.map((mode) => (
+                    <button
+                      key={mode}
+                      className={cx(
+                        "h-9 rounded-md px-3 text-sm font-semibold transition",
+                        activeFocus === mode
+                          ? "bg-[#f6c66f] text-[#17201b]"
+                          : "text-[#607265] hover:bg-[#f3f0e6]",
+                      )}
+                      onClick={() => setActiveFocus(mode)}
+                      type="button"
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 rounded-md border border-[#cbd4c6] bg-white p-1">
-              {focusModes.map((mode) => (
-                <button
-                  key={mode}
-                  className={cx(
-                    "h-9 rounded-md px-3 text-sm font-semibold transition",
-                    activeFocus === mode
-                      ? "bg-[#f6c66f] text-[#17201b]"
-                      : "text-[#607265] hover:bg-[#f3f0e6]",
-                  )}
-                  onClick={() => setActiveFocus(mode)}
-                  type="button"
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          </div>
+            <Link
+              className="rounded-lg border border-[#d8ded1] bg-[#17251f] p-4 text-white shadow-sm transition hover:bg-[#253b32]"
+              href="/voice"
+            >
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#dce7e2]">
+                <Mic size={16} />
+                Voice Rooms
+              </p>
+              <h3 className="mt-2 text-lg font-semibold">
+                Try a voice-first match.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[#dce7e2]">
+                Start with a short conversation, then reveal profiles when the
+                moment feels right.
+              </p>
+            </Link>
+          </section>
 
           {actionError ? (
             <ActionNotice message={actionError} tone="error" />
@@ -552,7 +483,7 @@ export default function Home() {
                     No matches for this filter
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                    Try the full discovery queue, or check liked and passed
+                    Try the full People queue, or check liked and passed
                     profiles while more people complete onboarding.
                   </p>
                   <button
@@ -1170,10 +1101,10 @@ function EmptyDiscovery({
         No recommendations yet
       </p>
       <h3 className="mt-1 text-xl font-semibold">
-        Discovery will fill in as members complete profiles.
+        People will fill in as members complete profiles.
       </h3>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Discovery only shows members who completed onboarding, reached profile
+        People only shows members who completed onboarding, reached profile
         quality, stayed visible, and passed safety filters. Try widening your
         filters, finish your own profile, or check back as more members become
         discoverable.
@@ -1209,17 +1140,7 @@ function DiscoveryAccessState({ error }: { error?: string }) {
   if (!error) {
     return (
       <main className="min-h-screen bg-[#f6f7f1] text-[#17201b]">
-        <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)_340px]">
-          <aside className="border-b border-[#d8ded1] bg-[#17251f] px-4 py-4 text-[#f7f4e9] lg:border-b-0 lg:border-r">
-            <div className="h-4 w-16 rounded-md bg-[#385046]" />
-            <div className="mt-3 h-7 w-32 rounded-md bg-[#385046]" />
-            <div className="mt-6 space-y-2">
-              {[1, 2, 3, 4].map((item) => (
-                <div className="h-11 rounded-md bg-[#22362e]" key={item} />
-              ))}
-            </div>
-          </aside>
-
+        <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8">
             <div className="border-b border-[#d8ded1] pb-5">
               <div className="h-4 w-44 rounded-md bg-[#d8ded1]" />
@@ -1265,10 +1186,10 @@ function DiscoveryAccessState({ error }: { error?: string }) {
           </span>
           <div>
             <p className="text-sm font-semibold text-[#607265]">
-              {error ? "Discovery is paused" : "Checking recommendations"}
+              {error ? "People is paused" : "Checking recommendations"}
             </p>
             <h1 className="mt-1 text-xl font-semibold">
-              {error ? "Discovery needs attention" : "Preparing Tribe"}
+              {error ? "People needs attention" : "Preparing Tribe"}
             </h1>
           </div>
         </div>
@@ -1286,35 +1207,5 @@ function DiscoveryAccessState({ error }: { error?: string }) {
         ) : null}
       </section>
     </main>
-  );
-}
-
-function NavButton({
-  item,
-}: {
-  item: {
-      active: boolean;
-      href: string;
-      icon: LucideIcon;
-      label: string;
-      hasBadge?: boolean;
-    };
-}) {
-  const Icon = item.icon;
-
-  return (
-    <Link
-      className={cx(
-        "flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition lg:justify-start",
-        item.active
-          ? "bg-[#f7f4e9] text-[#17251f]"
-          : "text-[#cddbd4] hover:bg-[#22362e]",
-      )}
-      href={item.href}
-    >
-      <Icon size={17} />
-      <span className="hidden sm:inline">{item.label}</span>
-      {item.hasBadge ? <NotificationBadge /> : null}
-    </Link>
   );
 }

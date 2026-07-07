@@ -230,7 +230,7 @@ export default function AICompanionClient({
               href="/"
             >
               <ArrowLeft size={16} />
-              Discovery
+              People
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Sparkles size={16} />
@@ -255,7 +255,7 @@ export default function AICompanionClient({
               className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
               href="/messages"
             >
-              Messages
+              Chats
             </Link>
           </div>
         </header>
@@ -314,7 +314,7 @@ export default function AICompanionClient({
             title="Match Coach"
           >
             <Select
-              label="Discovery match"
+              label="People match"
               onChange={setSelectedMatchId}
               options={matches.map((match) => ({
                 label: `${match.name} - ${match.match}%`,

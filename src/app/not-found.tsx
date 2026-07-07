@@ -16,7 +16,7 @@ export default function NotFound() {
           className="mt-5 inline-flex h-10 items-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
           href="/"
         >
-          Return to discovery
+          Return to People
         </Link>
       </section>
     </main>
