@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Unable to upload profile photos. Check the Supabase profile-media bucket and try again.",
+          "Unable to upload profile photos. Check profile media storage and try again.",
       },
       { status: 500 },
     );

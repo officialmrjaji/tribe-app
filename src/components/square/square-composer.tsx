@@ -6,7 +6,6 @@ import {
   Check,
   HelpCircle,
   LoaderCircle,
-  Lock,
   MessageSquareText,
   Send,
 } from "lucide-react";
@@ -35,14 +34,13 @@ export function SquareComposer() {
   const [body, setBody] = useState("");
   const [caption, setCaption] = useState("");
   const [topics, setTopics] = useState("");
-  const [isAnonymous, setIsAnonymous] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
   const [photo, setPhoto] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
-  const isAnonymousMode = isAnonymous || postType === "anonymous_thought";
+  const isAnonymousMode = postType === "anonymous_thought";
   const helperText = useMemo(() => {
     if (isAnonymousMode) {
       return "Anonymous posts are text-only, rate-limited, and still visible to moderators.";
@@ -64,10 +62,7 @@ export function SquareComposer() {
     setError("");
 
     if (nextType === "anonymous_thought") {
-      setIsAnonymous(true);
       setPhoto(null);
-    } else if (nextType === "photo") {
-      setIsAnonymous(false);
     }
   }
 
@@ -96,7 +91,7 @@ export function SquareComposer() {
       formData.append("caption", caption);
       formData.append("isAnonymous", String(isAnonymousMode));
       formData.append("pollQuestion", pollQuestion);
-      formData.append("postType", isAnonymousMode ? "anonymous_thought" : postType);
+      formData.append("postType", postType);
       formData.append("topics", topics);
       pollOptions
         .map((option) => option.trim())
@@ -275,35 +270,9 @@ export function SquareComposer() {
             />
           </label>
 
-          <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
-                  <Lock size={16} />
-                  Anonymous thought
-                </p>
-                <p className="mt-1 text-sm leading-6 text-[#607265]">
-                  {helperText}
-                </p>
-              </div>
-              <button
-                aria-pressed={isAnonymousMode}
-                className={[
-                  "flex h-9 min-w-24 items-center justify-center rounded-md px-3 text-sm font-bold transition",
-                  isAnonymousMode
-                    ? "bg-[#17251f] text-white"
-                    : "border border-[#cbd4c6] bg-white text-[#34443a]",
-                ].join(" ")}
-                onClick={() => {
-                  setIsAnonymous((current) => !current);
-                  setPhoto(null);
-                }}
-                type="button"
-              >
-                {isAnonymousMode ? "On" : "Off"}
-              </button>
-            </div>
-          </div>
+          <p className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] px-3 py-2 text-sm leading-6 text-[#607265]">
+            {helperText}
+          </p>
 
           {error ? (
             <p

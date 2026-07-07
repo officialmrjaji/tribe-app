@@ -19,6 +19,7 @@ import {
   assertOwnedProfileHasMinimumPhotos,
   assertProfileHasMinimumPhotos,
   getProfileVerification,
+  isRealProfilePhoto,
   minimumDiscoveryPhotoCount,
   type ProfileVerification,
   type OwnedProfile,
@@ -75,6 +76,7 @@ type UserReference = {
 type ProfilePhotoRow = {
   image_url: string;
   profile_id: string;
+  storage_path: string | null;
 };
 
 type ProfilePromptSummary = {
@@ -757,7 +759,7 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
   ] = await Promise.all([
     supabase
       .from("profile_photos")
-      .select("profile_id, image_url")
+      .select("profile_id, image_url, storage_path")
       .in("profile_id", profileIds)
       .order("is_primary", { ascending: false })
       .order("sort_order", { ascending: true })
@@ -807,6 +809,10 @@ async function hydrateProfileQualityDetails(profiles: ProfileRow[]) {
 
   const photosByProfileId = new Map<string, string[]>();
   ((photoResult.data ?? []) as ProfilePhotoRow[]).forEach((photo) => {
+    if (!isRealProfilePhoto(photo)) {
+      return;
+    }
+
     const photos = photosByProfileId.get(photo.profile_id) ?? [];
     photos.push(photo.image_url);
     photosByProfileId.set(photo.profile_id, photos);

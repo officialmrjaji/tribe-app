@@ -294,10 +294,9 @@ function AdminAccessDenied({ message }: { message: string }) {
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#34443a]">{message}</p>
           <p className="mt-3 text-sm leading-6 text-[#34443a]">
-            Add this account to `TRIBE_ADMIN_EMAILS`,
-            `TRIBE_ADMIN_CLERK_USER_IDS`, Clerk public metadata, or the
-            `admin_roles` table, then restart the local server if the
-            environment changed.
+            Ask an owner to add this account to the admin allowlist or admin
+            role settings, then restart the local server if access was just
+            changed.
           </p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <Link

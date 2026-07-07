@@ -381,7 +381,10 @@ export async function verifyPremiumPurchaseByReference(reference: string) {
 
   if (!isSuccessfulTransaction(transaction, purchase)) {
     await markPurchaseFailed(purchase, transaction);
-    throw new PremiumError("Paystack has not marked this payment as successful.", 402);
+    throw new PremiumError(
+      "The payment provider has not marked this payment as successful.",
+      402,
+    );
   }
 
   const updatedPurchase = await markPurchaseSuccessful(purchase, transaction);

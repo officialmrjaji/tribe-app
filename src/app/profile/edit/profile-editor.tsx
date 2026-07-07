@@ -186,7 +186,7 @@ export default function ProfileEditor({
         setQuality(responseBody.quality as ProfileQualitySnapshot);
       }
 
-      setMessage("Profile saved.");
+      setMessage("Profile saved successfully.");
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -224,7 +224,7 @@ export default function ProfileEditor({
 
       setQuality(responseBody as ProfileQualitySnapshot);
       setPhotoFiles([]);
-      setMessage("Profile photos uploaded.");
+      setMessage("Profile photos uploaded successfully.");
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
@@ -261,7 +261,7 @@ export default function ProfileEditor({
       }
 
       setQuality(responseBody as ProfileQualitySnapshot);
-      setMessage("Profile prompts saved.");
+      setMessage("Profile prompts saved successfully.");
     } catch (promptError) {
       setError(
         promptError instanceof Error
@@ -300,7 +300,7 @@ export default function ProfileEditor({
 
       setQuality(responseBody as ProfileQualitySnapshot);
       setVoiceFile(null);
-      setMessage("Voice introduction uploaded.");
+      setMessage("Voice introduction uploaded successfully.");
     } catch (voiceError) {
       setError(
         voiceError instanceof Error
@@ -457,23 +457,33 @@ export default function ProfileEditor({
 
             <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
               <SectionHeader
-                body="Upload at least 3 photos to unlock discovery. Add up to 6 photos; the first photo becomes your discovery image."
+                body="Upload at least 3 real profile photos to unlock discovery. Illustrated avatars can remain as supplementary media."
                 icon={ImagePlus}
                 eyebrow="Photos"
                 title="Profile photos"
               />
               {sortedPhotos.length ? (
                 <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-                  {sortedPhotos.map((photo) => (
-                    <Image
-                      alt={photo.alt_text ?? "Profile photo"}
-                      className="aspect-square rounded-md object-cover"
-                      height={120}
-                      key={photo.id}
-                      src={photo.image_url}
-                      width={120}
-                    />
-                  ))}
+                  {sortedPhotos.map((photo) => {
+                    const isSupplementary = !isUploadedProfilePhoto(photo);
+
+                    return (
+                      <div className="relative" key={photo.id}>
+                        <Image
+                          alt={photo.alt_text ?? "Profile photo"}
+                          className="aspect-square rounded-md object-cover"
+                          height={120}
+                          src={photo.image_url}
+                          width={120}
+                        />
+                        {isSupplementary ? (
+                          <span className="absolute bottom-1 left-1 rounded-md bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#607265] shadow-sm">
+                            Supplementary
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -607,7 +617,7 @@ export default function ProfileEditor({
                   />
                   <SignalGroup
                     label="Languages"
-                    values={languageSignals.length ? languageSignals : ["Not set"]}
+                    values={languageSignals.length ? languageSignals : ["Optional"]}
                   />
                   <SignalGroup
                     label="Personality"
@@ -660,7 +670,7 @@ export default function ProfileEditor({
                 <p className="mt-3 text-sm leading-6 text-[#8a3325]">
                   {quality.hasMinimumPhotos
                     ? "Discovery unlocks at 80%."
-                    : "Upload at least 3 photos to unlock discovery."}
+                    : "Upload at least 3 real profile photos to unlock discovery."}
                 </p>
               ) : (
                 <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#2f5f36]">
@@ -673,7 +683,7 @@ export default function ProfileEditor({
             {!quality.hasMinimumPhotos ? (
               <section className="rounded-md border border-[#ef8f7a] bg-white p-4">
                 <p className="text-sm font-semibold text-[#8a3325]">
-                  Upload at least 3 photos to unlock discovery.
+                  Upload at least 3 real profile photos to unlock discovery.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#34443a]">
                   {photosNeeded} more photo{photosNeeded === 1 ? "" : "s"}{" "}
@@ -831,6 +841,13 @@ function SignalGroup({ label, values }: { label: string; values: string[] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function isUploadedProfilePhoto(photo: ProfileQualitySnapshot["photos"][number]) {
+  return (
+    Boolean(photo.storage_path) &&
+    !photo.image_url.toLowerCase().includes("/avatars/")
   );
 }
 

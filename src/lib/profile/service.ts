@@ -7,7 +7,7 @@ const profileMediaBucket = "profile-media";
 const profileMediaMaxBytes = 10 * 1024 * 1024;
 export const minimumDiscoveryPhotoCount = 3;
 export const profilePhotoRequirementMessage =
-  "Upload at least 3 photos to unlock discovery.";
+  "Upload at least 3 real profile photos to unlock discovery.";
 const profilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 const profileVoiceMimeTypes = [
   "audio/mpeg",
@@ -188,6 +188,12 @@ export function getProfileVerification(
     identity: Boolean(profile.identity_verified_at),
     phone: Boolean(profile.phone_verified_at),
   };
+}
+
+export function isRealProfilePhoto(
+  photo: Pick<ProfilePhoto, "image_url" | "storage_path">,
+) {
+  return Boolean(photo.storage_path) && !isSupplementaryProfileImage(photo);
 }
 
 export function getPrimaryEmail(user: User) {
@@ -380,11 +386,12 @@ export async function getProfilePhotos(profileId: string) {
 
 export async function getProfilePhotoRequirementState(profileId: string) {
   const photos = await getProfilePhotos(profileId);
+  const realPhotos = photos.filter(isRealProfilePhoto);
 
   return {
-    hasMinimumPhotos: photos.length >= minimumDiscoveryPhotoCount,
+    hasMinimumPhotos: realPhotos.length >= minimumDiscoveryPhotoCount,
     minimumPhotoCount: minimumDiscoveryPhotoCount,
-    uploadedPhotoCount: photos.length,
+    uploadedPhotoCount: realPhotos.length,
   };
 }
 
@@ -716,7 +723,7 @@ async function ensureProfileMediaBucket(
   if (readError) {
     if (!isNotFoundError(readError)) {
       throw new ProfileMediaUploadError(
-        `Could not verify the ${profileMediaBucket} Supabase bucket: ${getServiceErrorMessage(
+        `Could not verify profile media storage: ${getServiceErrorMessage(
           readError,
         )}`,
         500,
@@ -730,7 +737,7 @@ async function ensureProfileMediaBucket(
 
     if (createError && !isAlreadyExistsError(createError)) {
       throw new ProfileMediaUploadError(
-        `The ${profileMediaBucket} Supabase bucket is missing and could not be created: ${getServiceErrorMessage(
+        `Profile media storage is missing and could not be created: ${getServiceErrorMessage(
           createError,
         )}`,
         500,
@@ -762,7 +769,7 @@ async function ensureProfileMediaBucket(
 
   if (updateError) {
     throw new ProfileMediaUploadError(
-      `The ${profileMediaBucket} Supabase bucket exists but could not be configured for profile media: ${getServiceErrorMessage(
+      `Profile media storage could not be configured: ${getServiceErrorMessage(
         updateError,
       )}`,
       500,
@@ -815,7 +822,7 @@ async function uploadProfileMediaObject({
 
   if (uploadError) {
     throw new ProfileMediaUploadError(
-      `Supabase storage upload failed for the ${kind === "photos" ? "photo" : "voice intro"}: ${getServiceErrorMessage(
+      `Profile media upload failed for the ${kind === "photos" ? "photo" : "voice intro"}: ${getServiceErrorMessage(
         uploadError,
       )}`,
       500,
@@ -829,7 +836,7 @@ async function uploadProfileMediaObject({
   if (!data.publicUrl) {
     await removeProfileMediaObjects(supabase, [storagePath]);
     throw new ProfileMediaUploadError(
-      `Supabase did not return a public URL for the uploaded ${kind === "photos" ? "photo" : "voice intro"}.`,
+      `Profile media storage did not return a public URL for the uploaded ${kind === "photos" ? "photo" : "voice intro"}.`,
       500,
     );
   }
@@ -904,7 +911,8 @@ function buildProfileQuality(
   prompts: ProfilePrompt[],
 ): ProfileQualitySnapshot {
   const completedPrompts = prompts.filter((prompt) => prompt.answer.trim());
-  const hasMinimumPhotos = photos.length >= minimumDiscoveryPhotoCount;
+  const realPhotos = photos.filter(isRealProfilePhoto);
+  const hasMinimumPhotos = realPhotos.length >= minimumDiscoveryPhotoCount;
   const checklist = [
     {
       complete: Boolean(profile.display_name),
@@ -975,8 +983,16 @@ function buildProfileQuality(
     minimumPhotoCount: minimumDiscoveryPhotoCount,
     photos,
     prompts,
-    uploadedPhotoCount: photos.length,
+    uploadedPhotoCount: realPhotos.length,
   };
+}
+
+function isSupplementaryProfileImage(
+  photo: Pick<ProfilePhoto, "image_url" | "storage_path">,
+) {
+  const imageUrl = photo.image_url.toLowerCase();
+
+  return imageUrl.includes("/avatars/");
 }
 
 async function updateProfileCompletion(profileId: string, completeness: number) {

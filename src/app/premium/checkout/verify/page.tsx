@@ -32,14 +32,14 @@ export default async function PremiumCheckoutVerifyPage({
     title: string;
     tone: "error" | "success";
   } = {
-    message: "Paystack did not return a payment reference.",
+    message: "The payment provider did not return a payment reference.",
     title: "Payment reference missing",
     tone: "error",
   };
 
   if (!reference) {
     state = {
-      message: "Paystack did not return a payment reference.",
+      message: "The payment provider did not return a payment reference.",
       title: "Payment reference missing",
       tone: "error",
     };

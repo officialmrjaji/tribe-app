@@ -149,7 +149,7 @@ export default async function PremiumManagePage() {
               </p>
               <p className="mt-2 text-sm leading-6 text-[#34443a]">
                 Use the restore button on the upgrade page to re-apply completed
-                Paystack payments to your account.
+                payments to your account.
               </p>
             </Link>
             <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">

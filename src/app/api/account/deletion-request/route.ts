@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       .from("moderation_cases")
       .insert({
         details:
-          "User confirmed they understand account removal is permanent. Full Clerk and Supabase deletion is pending safe operational review.",
+          "User confirmed they understand account removal is permanent. Full account and data deletion is pending safe operational review.",
         priority: "high",
         reason: "account_deletion_request",
         reporter_user_id: userId,

@@ -18,7 +18,7 @@ import { AccountActions } from "./account-actions";
 
 const settingsSections = [
   {
-    body: "Name, email, login methods, and profile ownership are handled through Clerk and your Tribe profile.",
+    body: "Name, email, sign-in methods, and profile ownership are managed through your Tribe account.",
     href: "/profile/edit",
     icon: UserRound,
     label: "Account",
@@ -36,7 +36,7 @@ const settingsSections = [
     label: "Discovery",
   },
   {
-    body: "Review in-app alerts for likes, matches, conversations, and messages.",
+    body: "Review in-app notifications for likes, matches, conversations, and messages.",
     href: "/notifications",
     icon: Bell,
     label: "Notifications",
@@ -51,7 +51,7 @@ const settingsSections = [
     body: "Start random 2-minute voice matches, continue when both people agree, create rooms, and manage voice-first profile signals.",
     href: "/voice",
     icon: Mic,
-    label: "Voice",
+    label: "Voice Rooms",
   },
   {
     body: "Manage blocked users, reports, hidden users, privacy controls, and delete-account confirmation.",

@@ -281,7 +281,7 @@ export default function AICompanionClient({
               />
             </label>
             <p className="mt-3 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] px-3 py-2 text-sm text-[#34443a]">
-              Current interests: {interestText || "Not set"}
+              Current interests: {interestText || "Not added yet"}
             </p>
             {profileResult ? (
               <ResultBlock

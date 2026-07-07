@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Unable to upload voice introduction. Check the Supabase profile-media bucket and try again.",
+          "Unable to upload voice introduction. Check profile media storage and try again.",
       },
       { status: 500 },
     );

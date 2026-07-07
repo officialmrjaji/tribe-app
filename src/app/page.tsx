@@ -83,6 +83,22 @@ function getActionFailureMessage(payload: unknown, fallback: string) {
   return [actionPayload.error, firstIssue].filter(Boolean).join(" ") || fallback;
 }
 
+function getMatchLabel(score: number) {
+  if (score >= 92) {
+    return "Highly Compatible";
+  }
+
+  if (score >= 84) {
+    return "Strong Match";
+  }
+
+  if (score >= 74) {
+    return "Great Match";
+  }
+
+  return "Promising Match";
+}
+
 export default function Home() {
   const router = useRouter();
   const [accessState, setAccessState] = useState<"checking" | "ready" | "error">(
@@ -336,8 +352,8 @@ export default function Home() {
               { label: "Square", icon: Sparkles, href: "/square", active: false },
               { label: "Premium", icon: Crown, href: "/premium", active: false },
               { label: "AI Coach", icon: Sparkles, href: "/ai", active: false },
-              { label: "Voice", icon: Mic, href: "/voice", active: false },
-              { label: "Explore", icon: Heart, href: "/explore", active: false },
+              { label: "Voice Rooms", icon: Mic, href: "/voice", active: false },
+              { label: "Connections", icon: Heart, href: "/explore", active: false },
               {
                 label: "Messages",
                 icon: MessageCircle,
@@ -345,7 +361,7 @@ export default function Home() {
                 active: false,
               },
               {
-                label: "Alerts",
+                label: "Notifications",
                 icon: Bell,
                 href: "/notifications",
                 active: false,
@@ -434,7 +450,7 @@ export default function Home() {
                 href="/explore"
               >
                 <Heart size={17} />
-                Explore
+                Connections
               </Link>
               <Link
                 className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
@@ -592,11 +608,11 @@ export default function Home() {
                             </div>
                             <span
                               className={cx(
-                                "flex h-10 w-12 shrink-0 items-center justify-center rounded-md text-sm font-bold text-[#17201b]",
+                                "flex min-h-10 max-w-28 shrink-0 items-center justify-center rounded-md px-2 text-center text-[11px] font-bold leading-4 text-[#17201b]",
                                 profile.accent,
                               )}
                             >
-                              {profile.match}
+                              {getMatchLabel(profile.match)}
                             </span>
                           </div>
                           <p className="mt-2 text-sm font-medium text-[#34443a]">
@@ -827,100 +843,15 @@ function SelectedProfilePanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
-        <div>
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-            <Sparkles size={14} />
-            Pace
-          </p>
-          <p className="mt-1 text-sm font-semibold">{profile.pace}</p>
-        </div>
-        <div>
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-            <CalendarDays size={14} />
-            Open
-          </p>
-          <p className="mt-1 text-sm font-semibold">{profile.availability}</p>
-        </div>
-        <div className="col-span-2">
-          <p className="text-xs font-semibold uppercase text-[#607265]">
-            Profile quality
-          </p>
-          <div className="mt-2 flex items-center gap-3">
-            <div className="h-2 flex-1 rounded-md bg-[#e2e6dc]">
-              <div
-                className="h-2 rounded-md bg-[#17251f]"
-                style={{ width: `${profile.profileCompleteness}%` }}
-              />
-            </div>
-            <span className="text-sm font-semibold">
-              {profile.profileCompleteness}%
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        {axisMetrics.map((metric) => {
-          const Icon = metric.icon;
-          const value = profile.axes[metric.key];
-
-          return (
-            <div key={metric.label}>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 font-semibold">
-                  <Icon size={15} />
-                  {metric.label}
-                </span>
-                <span>{value}%</span>
-              </div>
-              <div className="mt-2 h-2 rounded-md bg-[#e2e6dc]">
-                <div
-                  className="h-2 rounded-md bg-[#17251f]"
-                  style={{ width: `${value}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       <div className="mt-5">
         <p className="text-sm font-semibold text-[#607265]">
-          Match score breakdown
-        </p>
-        <div className="mt-3 space-y-2">
-          {scoreBreakdownMetrics.map((metric) => {
-            const value = profile.scoreBreakdown[metric.key];
-
-            return (
-              <div key={metric.key}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold">{metric.label}</span>
-                  <span>{value}%</span>
-                </div>
-                <div className="mt-1 h-2 rounded-md bg-[#e2e6dc]">
-                  <div
-                    className="h-2 rounded-md bg-[#f6c66f]"
-                    style={{ width: `${value}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">
-          Interests, languages, and goals
+          Shared interests
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {[
-            ...profile.sharedInterests,
-            ...profile.languages,
-            ...profile.sharedGoals,
-          ].slice(0, 8).map((value) => (
+          {(profile.sharedInterests.length
+            ? profile.sharedInterests
+            : ["Still discovering overlap"]
+          ).slice(0, 6).map((value) => (
             <span
               key={value}
               className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
@@ -928,6 +859,36 @@ function SelectedProfilePanel({
               {value}
             </span>
           ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">Shared goals</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {profile.sharedGoals.slice(0, 4).map((value) => (
+            <span
+              key={value}
+              className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
+            >
+              {value}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-[#607265]">Languages</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(profile.languages.length ? profile.languages : ["Optional"]).map(
+            (value) => (
+              <span
+                key={value}
+                className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-[#34443a]"
+              >
+                {value}
+              </span>
+            ),
+          )}
         </div>
       </div>
 
@@ -961,7 +922,7 @@ function SelectedProfilePanel({
       </div>
 
       <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Match reasons</p>
+        <p className="text-sm font-semibold text-[#607265]">Why this match</p>
         <div className="mt-3 space-y-2">
           {profile.reasons.slice(0, 4).map((reason) => (
             <p
@@ -974,6 +935,104 @@ function SelectedProfilePanel({
           ))}
         </div>
       </div>
+
+      <details className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-[#607265]">
+          See full compatibility breakdown
+        </summary>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
+          <div>
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
+              <Sparkles size={14} />
+              Pace
+            </p>
+            <p className="mt-1 text-sm font-semibold">{profile.pace}</p>
+          </div>
+          <div>
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
+              <CalendarDays size={14} />
+              Open
+            </p>
+            <p className="mt-1 text-sm font-semibold">{profile.availability}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="text-xs font-semibold uppercase text-[#607265]">
+              Profile quality
+            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="h-2 flex-1 rounded-md bg-[#e2e6dc]">
+                <div
+                  className="h-2 rounded-md bg-[#17251f]"
+                  style={{ width: `${profile.profileCompleteness}%` }}
+                />
+              </div>
+              <span className="text-sm font-semibold">
+                {profile.profileCompleteness}%
+              </span>
+            </div>
+          </div>
+          <div className="col-span-2">
+            <p className="text-xs font-semibold uppercase text-[#607265]">
+              Detailed match score
+            </p>
+            <p className="mt-1 text-sm font-semibold">
+              {profile.match}% / {getMatchLabel(profile.match)}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {axisMetrics.map((metric) => {
+            const Icon = metric.icon;
+            const value = profile.axes[metric.key];
+
+            return (
+              <div key={metric.label}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 font-semibold">
+                    <Icon size={15} />
+                    {metric.label}
+                  </span>
+                  <span>{value}%</span>
+                </div>
+                <div className="mt-2 h-2 rounded-md bg-[#e2e6dc]">
+                  <div
+                    className="h-2 rounded-md bg-[#17251f]"
+                    style={{ width: `${value}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-[#607265]">
+            Match score breakdown
+          </p>
+          <div className="mt-3 space-y-2">
+            {scoreBreakdownMetrics.map((metric) => {
+              const value = profile.scoreBreakdown[metric.key];
+
+              return (
+                <div key={metric.key}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold">{metric.label}</span>
+                    <span>{value}%</span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-md bg-[#e2e6dc]">
+                    <div
+                      className="h-2 rounded-md bg-[#f6c66f]"
+                      style={{ width: `${value}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </details>
 
       {profile.profilePrompts.length ? (
         <div className="mt-5">

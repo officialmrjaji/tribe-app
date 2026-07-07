@@ -1760,7 +1760,7 @@ async function ensureSquareMediaBucket(
   if (readError) {
     if (!isNotFoundError(readError)) {
       throw new SquareError(
-        `Could not verify the ${squareMediaBucket} Supabase bucket.`,
+        "Could not verify Square media storage.",
         500,
       );
     }
@@ -1772,7 +1772,7 @@ async function ensureSquareMediaBucket(
 
     if (createError && !isAlreadyExistsError(createError)) {
       throw new SquareError(
-        `The ${squareMediaBucket} Supabase bucket could not be created.`,
+        "Square media storage could not be created.",
         500,
       );
     }
@@ -1802,7 +1802,7 @@ async function ensureSquareMediaBucket(
 
   if (error) {
     throw new SquareError(
-      `The ${squareMediaBucket} Supabase bucket could not be configured.`,
+      "Square media storage could not be configured.",
       500,
     );
   }

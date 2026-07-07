@@ -119,7 +119,7 @@ export default async function ExplorePage({
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Sparkles size={16} />
-              Explore
+              Connections
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
               Likes, passes, and matches
@@ -307,7 +307,7 @@ function ExploreEmptyState({ activeTab }: { activeTab: ExploreTab }) {
 
   return (
     <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-[#607265]">Explore</p>
+      <p className="text-sm font-semibold text-[#607265]">Connections</p>
       <h2 className="mt-1 text-xl font-semibold">{copy.title}</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
         {copy.body}

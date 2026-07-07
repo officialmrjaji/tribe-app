@@ -161,7 +161,7 @@ export default async function PublicProfilePage(
             href="/explore"
           >
             <ArrowLeft size={16} />
-            Explore
+            Connections
           </Link>
           <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
             {primaryImage ? (

@@ -70,9 +70,10 @@ export function AccountDeletionRequest() {
         Request account deletion
       </p>
       <p className="mt-2 text-sm leading-6 text-[#34443a]">
-        Full deletion is not automatic yet because it must safely clean up Clerk,
-        Supabase records, media, payments, and moderation history. This sends a
-        deletion request for review without permanently deleting anything today.
+        Full deletion is not automatic yet because it must safely remove your
+        account, media, payment history, activity, and safety records across all
+        our systems. This sends a deletion request for review without
+        permanently deleting anything today.
       </p>
 
       <div className="mt-4 space-y-3 rounded-md border border-[#f0c0b4] bg-[#fff8f5] p-3">

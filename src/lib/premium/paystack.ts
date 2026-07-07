@@ -80,7 +80,7 @@ export async function initializePaystackTransaction({
 
   if (!response.ok || !payload?.status) {
     throw new PaystackError(
-      payload?.message ?? "Paystack could not initialize checkout.",
+      payload?.message ?? "The payment provider could not initialize checkout.",
       response.status || 502,
     );
   }
@@ -90,7 +90,9 @@ export async function initializePaystackTransaction({
   const paystackReference = payload.data?.reference;
 
   if (!authorizationUrl || !accessCode || !paystackReference) {
-    throw new PaystackError("Paystack returned an incomplete checkout session.");
+    throw new PaystackError(
+      "The payment provider returned an incomplete checkout session.",
+    );
   }
 
   return {
@@ -116,7 +118,7 @@ export async function verifyPaystackTransaction(reference: string) {
 
   if (!response.ok || !payload?.status) {
     throw new PaystackError(
-      payload?.message ?? "Paystack could not verify this payment.",
+      payload?.message ?? "The payment provider could not verify this payment.",
       response.status || 502,
     );
   }
@@ -124,7 +126,9 @@ export async function verifyPaystackTransaction(reference: string) {
   const transaction = payload.data;
 
   if (!transaction?.reference) {
-    throw new PaystackError("Paystack returned an incomplete verification.");
+    throw new PaystackError(
+      "The payment provider returned an incomplete verification.",
+    );
   }
 
   return {

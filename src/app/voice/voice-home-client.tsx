@@ -204,7 +204,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Mic size={16} />
-              Voice
+              Voice Rooms
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
               Meet by voice first, reveal profiles after.

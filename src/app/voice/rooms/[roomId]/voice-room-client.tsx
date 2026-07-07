@@ -96,7 +96,7 @@ export default function VoiceRoomClient({
               href="/voice"
             >
               <ArrowLeft size={16} />
-              Voice
+              Voice Rooms
             </Link>
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               {room.roomType === "private" ? (

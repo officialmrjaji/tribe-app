@@ -23,17 +23,17 @@ export async function getHealthStatus(): Promise<HealthCheckResult> {
   ]);
   const components = {
     ai: checkEnvironmentPair({
-      label: "OpenAI",
+      label: "AI service",
       optional: false,
       variables: ["OPENAI_API_KEY"],
     }),
     authentication: checkEnvironmentPair({
-      label: "Clerk",
+      label: "Authentication",
       variables: ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY"],
     }),
     database,
     payments: checkEnvironmentPair({
-      label: "Paystack",
+      label: "Payment",
       variables: ["NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY", "PAYSTACK_SECRET_KEY"],
     }),
     storage,

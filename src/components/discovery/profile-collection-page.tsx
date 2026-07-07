@@ -87,7 +87,7 @@ export function ProfileCollectionPage({
               href="/notifications"
             >
               <Bell size={16} />
-              Alerts
+              Notifications
               <NotificationBadge />
             </Link>
           </nav>

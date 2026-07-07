@@ -75,7 +75,8 @@ export async function createStructuredAIResponse<T>({
 
   if (!response.ok) {
     const message =
-      getOpenAIErrorMessage(payload) ?? "OpenAI could not generate a response.";
+      getOpenAIErrorMessage(payload) ??
+      "The AI assistant could not generate a response.";
 
     throw new OpenAIServiceError(message, response.status || 502);
   }
@@ -83,7 +84,7 @@ export async function createStructuredAIResponse<T>({
   const text = extractResponseText(payload as OpenAIResponsePayload | null);
 
   if (!text) {
-    throw new OpenAIServiceError("OpenAI returned an empty response.");
+    throw new OpenAIServiceError("The AI assistant returned an empty response.");
   }
 
   try {
@@ -92,7 +93,9 @@ export async function createStructuredAIResponse<T>({
       output: JSON.parse(text) as T,
     };
   } catch {
-    throw new OpenAIServiceError("OpenAI returned invalid structured JSON.");
+    throw new OpenAIServiceError(
+      "The AI assistant returned a response we could not read.",
+    );
   }
 }
 
@@ -101,7 +104,7 @@ function getOpenAIAPIKey() {
 
   if (!key) {
     throw new OpenAIServiceError(
-      "OPENAI_API_KEY is required before AI Companion can run.",
+      "AI service configuration is required before AI Companion can run.",
       500,
     );
   }
@@ -114,7 +117,7 @@ function getOpenAIModel() {
 
   if (!model) {
     throw new OpenAIServiceError(
-      "OPENAI_MODEL is required before AI Companion can run.",
+      "AI service configuration is required before AI Companion can run.",
       500,
     );
   }
