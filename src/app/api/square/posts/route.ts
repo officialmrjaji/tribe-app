@@ -45,9 +45,13 @@ export async function POST(request: Request) {
     const parsedPayload = squarePostInputSchema.safeParse(payload);
 
     if (!parsedPayload.success) {
+      const issueMessage = formatSquarePostValidationMessage(
+        parsedPayload.error.issues,
+      );
+
       return NextResponse.json(
         {
-          error: "Invalid Square post payload.",
+          error: issueMessage,
           issues: parsedPayload.error.issues,
         },
         { status: 400 },
@@ -110,4 +114,45 @@ export async function POST(request: Request) {
 
     return squareErrorResponse(error, "Square post could not be created.");
   }
+}
+
+function formatSquarePostValidationMessage(
+  issues: ReadonlyArray<{
+    message: string;
+    path: ReadonlyArray<PropertyKey>;
+  }>,
+) {
+  const issue = issues[0];
+
+  if (!issue) {
+    return "Check your Square post details and try again.";
+  }
+
+  const field = issue.path.join(".");
+
+  if (field === "postType") {
+    return "Choose a supported Square post type: thoughts, photos, questions, anonymous thoughts, polls, or recommendations.";
+  }
+
+  if (field.startsWith("pollOptions")) {
+    return "Polls support 2 to 4 options, each 120 characters or fewer.";
+  }
+
+  if (field.startsWith("topics")) {
+    return "Use up to 6 topics or hashtags, each 48 characters or fewer.";
+  }
+
+  if (field === "body") {
+    return "Main text must be 1,400 characters or fewer.";
+  }
+
+  if (field === "caption") {
+    return "Photo captions must be 280 characters or fewer.";
+  }
+
+  if (field === "pollQuestion") {
+    return "Poll questions must be 240 characters or fewer.";
+  }
+
+  return issue.message || "Check your Square post details and try again.";
 }

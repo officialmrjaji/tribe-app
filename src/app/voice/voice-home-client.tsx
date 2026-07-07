@@ -210,8 +210,9 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
               Meet by voice first, reveal profiles after.
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
-              Random voice matches last 5 minutes. Rooms can be public, private,
-              or scheduled. Video is not used.
+              Random voice matches start with 2 minutes and can extend only if
+              both people choose to continue. Rooms can be public, private, or
+              scheduled. Video is not used.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">

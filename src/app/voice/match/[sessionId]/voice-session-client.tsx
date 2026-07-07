@@ -11,7 +11,7 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import type { VoiceSessionSummary } from "@/lib/voice/service";
 
@@ -29,6 +29,7 @@ export default function VoiceSessionClient({
   const [pendingAction, setPendingAction] = useState<"mic" | "reveal" | null>(
     null,
   );
+  const [pendingContinue, setPendingContinue] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [now, setNow] = useState(() => new Date(session.startedAt).getTime());
@@ -44,6 +45,35 @@ export default function VoiceSessionClient({
 
     return () => window.clearInterval(timer);
   }, []);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/voice/sessions/${session.id}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceSessionPayload
+        | null;
+
+      if (response.ok && payload?.session) {
+        setSession(payload.session);
+      }
+    } catch {
+      // Polling is best effort; explicit actions still show errors.
+    }
+  }, [session.id]);
+
+  useEffect(() => {
+    if (canReveal || session.revealed) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshSession();
+    }, 8000);
+
+    return () => window.clearInterval(timer);
+  }, [canReveal, refreshSession, session.revealed]);
 
   async function checkMicrophone() {
     setPendingAction("mic");
@@ -62,6 +92,41 @@ export default function VoiceSessionClient({
       setError("Microphone permission is needed for voice sessions.");
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function continueTalking() {
+    setPendingContinue(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/voice/sessions/${session.id}/continue`, {
+        headers: { Accept: "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceSessionPayload
+        | null;
+
+      if (!response.ok || !payload?.session) {
+        throw new Error(payload?.error ?? "Unable to continue voice session.");
+      }
+
+      setSession(payload.session);
+      setMessage(
+        payload.session.extended
+          ? "Both people chose to continue. The voice session was extended."
+          : "Continue request saved. Waiting for the other person.",
+      );
+    } catch (continueError) {
+      setError(
+        continueError instanceof Error
+          ? continueError.message
+          : "Unable to continue voice session.",
+      );
+    } finally {
+      setPendingContinue(false);
     }
   }
 
@@ -113,11 +178,12 @@ export default function VoiceSessionClient({
               Random voice match
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
-              Five minutes, profile reveal after.
+              Two minutes first, profile reveal after.
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
               This session is matched by personality, interests, and language
-              signals. Keep it voice-only; video is not used.
+              signals. If both people want more time, you can extend the
+              voice-only session before profiles reveal. Video is not used.
             </p>
           </div>
           <button
@@ -157,9 +223,40 @@ export default function VoiceSessionClient({
                 Reveal rule
               </p>
               <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                Profiles reveal after the 5-minute timer ends. Until then, keep
-                the conversation focused on voice, pace, and shared signals.
+                Profiles reveal after the timer ends. Start with 2 minutes; if
+                both people tap Continue talking, the session can extend by up
+                to 5 extra minutes.
               </p>
+            </div>
+            <div className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-4">
+              <p className="text-sm font-semibold text-[#607265]">
+                Continue talking
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#34443a]">
+                {session.extended
+                  ? "Both people chose to continue. The profile reveal moves to the extended timer."
+                  : session.continueVoted
+                    ? `Your request is saved (${session.continueVoteCount}/${session.continueRequiredCount}). Waiting for the other person.`
+                    : "Tap during the first 2 minutes if the conversation feels worth extending."}
+              </p>
+              <button
+                className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-[#fbfaf4] px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
+                disabled={
+                  !session.canRequestContinue ||
+                  session.continueVoted ||
+                  pendingContinue ||
+                  canReveal
+                }
+                onClick={continueTalking}
+                type="button"
+              >
+                {pendingContinue ? (
+                  <LoaderCircle className="animate-spin" size={16} />
+                ) : (
+                  <Clock size={16} />
+                )}
+                Continue talking
+              </button>
             </div>
             <div className="mt-5 space-y-2">
               {session.matchingBasis.map((reason) => (

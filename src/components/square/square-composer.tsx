@@ -21,6 +21,14 @@ import {
 
 const postTypes = squarePostTypeValues;
 
+type SquarePostErrorPayload = {
+  error?: string;
+  issues?: Array<{
+    message?: string;
+    path?: Array<string | number>;
+  }>;
+};
+
 export function SquareComposer() {
   const router = useRouter();
   const [postType, setPostType] = useState<SquarePostType>("thought");
@@ -106,7 +114,9 @@ export function SquareComposer() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Square post could not be created.");
+        throw new Error(
+          getFailureMessage(payload, "Square post could not be created."),
+        );
       }
 
       router.push(`/square/posts/${payload.post.id}`);
@@ -326,4 +336,35 @@ export function SquareComposer() {
       </div>
     </main>
   );
+}
+
+function getFailureMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  const actionPayload = payload as SquarePostErrorPayload;
+  const firstIssue = actionPayload.issues?.[0];
+  const issueMessage = firstIssue?.message;
+  const issueField = firstIssue?.path?.join(".");
+  const issuePrefix = issueField ? `${toFriendlyFieldName(issueField)}: ` : "";
+
+  return (
+    [actionPayload.error, issueMessage ? `${issuePrefix}${issueMessage}` : null]
+      .filter(Boolean)
+      .join(" ") || fallback
+  );
+}
+
+function toFriendlyFieldName(field: string) {
+  const labels: Record<string, string> = {
+    body: "Main text",
+    caption: "Caption",
+    pollOptions: "Poll options",
+    pollQuestion: "Poll question",
+    postType: "Post type",
+    topics: "Topics",
+  };
+
+  return labels[field] ?? field;
 }

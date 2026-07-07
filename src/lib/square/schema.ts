@@ -11,6 +11,26 @@ export const squarePostTypeValues = [
 
 export type SquarePostType = (typeof squarePostTypeValues)[number];
 
+const squarePostTypeAliases: Record<string, SquarePostType> = {
+  anonymous: "anonymous_thought",
+  anonymous_thought: "anonymous_thought",
+  anonymous_thoughts: "anonymous_thought",
+  "anonymous-thought": "anonymous_thought",
+  "anonymous-thoughts": "anonymous_thought",
+  "anonymous thought": "anonymous_thought",
+  "anonymous thoughts": "anonymous_thought",
+  photo: "photo",
+  photos: "photo",
+  poll: "poll",
+  polls: "poll",
+  question: "question",
+  questions: "question",
+  recommendation: "recommendation",
+  recommendations: "recommendation",
+  thought: "thought",
+  thoughts: "thought",
+};
+
 export const squarePostTypeLabels: Record<SquarePostType, string> = {
   anonymous_thought: "Anonymous thought",
   photo: "Photo",
@@ -20,14 +40,58 @@ export const squarePostTypeLabels: Record<SquarePostType, string> = {
   thought: "Thought",
 };
 
+const optionalText = (maxLength: number) =>
+  z.preprocess(
+    (value) => (value === null || value === undefined ? undefined : value),
+    z.string().trim().max(maxLength).optional(),
+  );
+
+const optionalStringArray = (maxItems: number, maxLength: number) =>
+  z.preprocess((value) => {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      return value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    return value;
+  }, z.array(z.string().trim().min(1).max(maxLength)).max(maxItems).optional());
+
+const optionalBoolean = z.preprocess((value) => {
+  if (typeof value === "string") {
+    return value === "true";
+  }
+
+  return value;
+}, z.boolean().optional());
+
+const squarePostTypeSchema = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+
+  return squarePostTypeAliases[normalized] ?? value;
+}, z.enum(squarePostTypeValues));
+
 export const squarePostInputSchema = z.object({
-  body: z.string().trim().max(1400).optional(),
-  caption: z.string().trim().max(280).optional(),
-  isAnonymous: z.boolean().optional(),
-  pollOptions: z.array(z.string().trim().min(1).max(120)).max(4).optional(),
-  pollQuestion: z.string().trim().max(240).optional(),
-  postType: z.enum(squarePostTypeValues),
-  topics: z.array(z.string().trim().min(1).max(48)).max(6).optional(),
+  body: optionalText(1400),
+  caption: optionalText(280),
+  isAnonymous: optionalBoolean,
+  pollOptions: optionalStringArray(4, 120),
+  pollQuestion: optionalText(240),
+  postType: squarePostTypeSchema,
+  topics: optionalStringArray(6, 48),
 });
 
 export const squareCommentInputSchema = z.object({

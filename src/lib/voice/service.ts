@@ -12,6 +12,10 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { CreateVoiceRoomInput } from "./schema";
 
+const randomVoiceSessionMs = 2 * 60 * 1000;
+const maxVoiceExtensionMs = 5 * 60 * 1000;
+const maxRandomVoiceSessionMs = randomVoiceSessionMs + maxVoiceExtensionMs;
+
 export class VoiceExperienceError extends Error {
   status: number;
 
@@ -66,6 +70,13 @@ type VoiceRoomParticipantRow = {
   user_id: string;
 };
 
+type VoiceContinueVoteRow = {
+  created_at: string;
+  profile_id: string;
+  session_id: string;
+  user_id: string;
+};
+
 type ProfileSummaryRow = {
   avatar_url: string | null;
   city: string | null;
@@ -90,7 +101,13 @@ export type VoiceProfileSummary = {
 
 export type VoiceSessionSummary = {
   canReveal: boolean;
+  canRequestContinue: boolean;
+  continueRequiredCount: number;
+  continueVoteCount: number;
+  continueVoted: boolean;
   endsAt: string;
+  extensionLimitAt: string;
+  extended: boolean;
   id: string;
   languageSignal: string | null;
   matchingBasis: string[];
@@ -142,7 +159,7 @@ export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
   const candidates = discovery.profiles.slice(0, 8);
   const candidate = candidates[Math.floor(Math.random() * candidates.length)];
   const now = new Date();
-  const endsAt = new Date(now.getTime() + 5 * 60 * 1000);
+  const endsAt = new Date(now.getTime() + randomVoiceSessionMs);
   const supabase = createSupabaseAdminClient();
   const { data: session, error } = await supabase
     .from("voice_sessions")
@@ -199,6 +216,11 @@ export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
   });
 
   return formatVoiceSession({
+    continueState: {
+      requiredCount: 2,
+      voteCount: 0,
+      voted: false,
+    },
     otherProfile: null,
     session: voiceSession,
   });
@@ -219,9 +241,76 @@ export async function getVoiceSession(
     : null;
 
   return formatVoiceSession({
+    continueState: await getVoiceContinueState(session, ownedProfile.account.id),
     otherProfile,
     session,
   });
+}
+
+export async function continueVoiceSession(
+  ownedProfile: OwnedProfile,
+  sessionId: string,
+) {
+  const session = await getVoiceSessionForMember(ownedProfile, sessionId);
+
+  if (session.status !== "active") {
+    throw new VoiceExperienceError("Only active voice sessions can be extended.", 409);
+  }
+
+  if (isVoiceSessionExtended(session)) {
+    throw new VoiceExperienceError("This voice session has already been extended.", 409);
+  }
+
+  if (Date.now() > getInitialVoiceEndAt(session).getTime()) {
+    throw new VoiceExperienceError(
+      "Continue talking is only available during the first 2 minutes.",
+      409,
+    );
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { error: voteError } = await supabase
+    .from("voice_session_continue_votes")
+    .upsert(
+      {
+        profile_id: ownedProfile.profile.id,
+        session_id: session.id,
+        user_id: ownedProfile.account.id,
+      },
+      { onConflict: "session_id,user_id" },
+    );
+
+  if (voteError) {
+    throw voteError;
+  }
+
+  const continueState = await getVoiceContinueState(
+    session,
+    ownedProfile.account.id,
+  );
+
+  if (continueState.voteCount >= continueState.requiredCount) {
+    const now = new Date().toISOString();
+    const extendedEndsAt = getMaxVoiceEndAt(session).toISOString();
+    const { data, error } = await supabase
+      .from("voice_sessions")
+      .update({
+        ends_at: extendedEndsAt,
+        reveal_profiles_after: extendedEndsAt,
+        updated_at: now,
+      })
+      .eq("id", session.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return getVoiceSession(ownedProfile, (data as VoiceSessionRow).id);
+  }
+
+  return getVoiceSession(ownedProfile, sessionId);
 }
 
 export async function revealVoiceSession(
@@ -232,7 +321,7 @@ export async function revealVoiceSession(
 
   if (!canRevealSession(session)) {
     throw new VoiceExperienceError(
-      "Profiles reveal after the 5-minute voice session ends.",
+      "Profiles reveal after the voice session ends.",
       403,
     );
   }
@@ -593,17 +682,34 @@ async function getProfilesByUserIds(userIds: string[]) {
 }
 
 function formatVoiceSession({
+  continueState,
   otherProfile,
   session,
 }: {
+  continueState: {
+    requiredCount: number;
+    voteCount: number;
+    voted: boolean;
+  };
   otherProfile: VoiceProfileSummary | null;
   session: VoiceSessionRow;
 }): VoiceSessionSummary {
   const canReveal = canRevealSession(session);
+  const extended = isVoiceSessionExtended(session);
+  const canRequestContinue =
+    session.status === "active" &&
+    !extended &&
+    Date.now() <= getInitialVoiceEndAt(session).getTime();
 
   return {
     canReveal,
+    canRequestContinue,
+    continueRequiredCount: continueState.requiredCount,
+    continueVoteCount: continueState.voteCount,
+    continueVoted: continueState.voted,
     endsAt: session.ends_at,
+    extensionLimitAt: getMaxVoiceEndAt(session).toISOString(),
+    extended,
     id: session.id,
     languageSignal: session.language_signal,
     matchingBasis: session.matching_basis,
@@ -622,6 +728,46 @@ function canRevealSession(session: VoiceSessionRow) {
   return (
     session.status === "completed" ||
     new Date(session.reveal_profiles_after).getTime() <= Date.now()
+  );
+}
+
+async function getVoiceContinueState(
+  session: VoiceSessionRow,
+  currentUserId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_session_continue_votes")
+    .select("*")
+    .eq("session_id", session.id);
+
+  if (error) {
+    throw error;
+  }
+
+  const votes = (data ?? []) as VoiceContinueVoteRow[];
+
+  return {
+    requiredCount: 2,
+    voteCount: votes.length,
+    voted: votes.some((vote) => vote.user_id === currentUserId),
+  };
+}
+
+function getInitialVoiceEndAt(session: VoiceSessionRow) {
+  return new Date(new Date(session.started_at).getTime() + randomVoiceSessionMs);
+}
+
+function getMaxVoiceEndAt(session: VoiceSessionRow) {
+  return new Date(
+    new Date(session.started_at).getTime() + maxRandomVoiceSessionMs,
+  );
+}
+
+function isVoiceSessionExtended(session: VoiceSessionRow) {
+  return (
+    new Date(session.ends_at).getTime() >
+    getInitialVoiceEndAt(session).getTime() + 1000
   );
 }
 

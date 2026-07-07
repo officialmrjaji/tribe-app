@@ -48,7 +48,7 @@ const settingsSections = [
     label: "Messaging",
   },
   {
-    body: "Start random 5-minute voice matches, create rooms, and manage voice-first profile signals.",
+    body: "Start random 2-minute voice matches, continue when both people agree, create rooms, and manage voice-first profile signals.",
     href: "/voice",
     icon: Mic,
     label: "Voice",
