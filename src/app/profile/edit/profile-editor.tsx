@@ -346,7 +346,7 @@ export default function ProfileEditor({
             </Link>
             <h1 className="mt-2 text-2xl font-semibold">Edit profile</h1>
             <p className="mt-2 text-sm leading-6 text-[#34443a]">
-              Profiles must reach 80% completeness before discovery opens.
+              Profiles must reach 80% completeness before People opens.
             </p>
           </div>
           <button
@@ -457,7 +457,7 @@ export default function ProfileEditor({
 
             <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
               <SectionHeader
-                body="Upload at least 3 real profile photos to unlock discovery. Illustrated avatars can remain as supplementary media."
+                body="Upload at least 3 real profile photos to unlock People. Illustrated avatars can remain as supplementary media."
                 icon={ImagePlus}
                 eyebrow="Photos"
                 title="Profile photos"
@@ -670,7 +670,7 @@ export default function ProfileEditor({
                 <p className="mt-3 text-sm leading-6 text-[#8a3325]">
                   {quality.hasMinimumPhotos
                     ? "People unlocks at 80%."
-                    : "Upload at least 3 real profile photos to unlock discovery."}
+                    : "Upload at least 3 real profile photos to unlock People."}
                 </p>
               ) : (
                 <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#2f5f36]">
@@ -683,7 +683,7 @@ export default function ProfileEditor({
             {!quality.hasMinimumPhotos ? (
               <section className="rounded-md border border-[#ef8f7a] bg-white p-4">
                 <p className="text-sm font-semibold text-[#8a3325]">
-                  Upload at least 3 real profile photos to unlock discovery.
+                  Upload at least 3 real profile photos to unlock People.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#34443a]">
                   {photosNeeded} more photo{photosNeeded === 1 ? "" : "s"}{" "}
@@ -698,7 +698,7 @@ export default function ProfileEditor({
                 Profile completeness checklist
               </p>
               <p className="mt-1 text-sm leading-6 text-[#34443a]">
-                Finish these items to keep discovery, liking, and messaging
+                Finish these items to keep People, liking, and messaging
                 trustworthy for everyone.
               </p>
               <div className="mt-3 space-y-2">

@@ -49,6 +49,7 @@ export async function POST(request: Request, context: SquareCommentsContext) {
     const comment = await createSquareComment({
       body: parsedPayload.data.body,
       ownedProfile: session.ownedProfile,
+      parentCommentId: parsedPayload.data.parentCommentId,
       postId,
     });
 

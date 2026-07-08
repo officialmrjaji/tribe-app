@@ -9,6 +9,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
@@ -149,6 +150,11 @@ export default async function PublicProfilePage(
   const photos = (photoResult.data ?? []) as PublicPhotoRow[];
   const prompts = (promptResult.data ?? []) as PublicPromptRow[];
   const primaryImage = photos[0]?.image_url ?? publicProfile.avatar_url;
+  const galleryPhotos = photos.length
+    ? photos.map((photo) => photo.image_url)
+    : primaryImage
+      ? [primaryImage]
+      : [];
   const isPremium = (subscriptionResult.data ?? []).length > 0;
   const hasActiveBoost = (boostResult.data ?? []).length > 0;
 
@@ -165,13 +171,18 @@ export default async function PublicProfilePage(
           </Link>
           <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
             {primaryImage ? (
-              <Image
-                alt={`${publicProfile.display_name ?? "Tribe member"} profile`}
-                className="h-28 w-28 rounded-md object-cover"
-                height={112}
-                src={primaryImage}
-                width={112}
-              />
+              <ProfilePhotoGallery
+                label={`${publicProfile.display_name ?? "Tribe member"} photos`}
+                photos={galleryPhotos}
+              >
+                <Image
+                  alt={`${publicProfile.display_name ?? "Tribe member"} profile`}
+                  className="h-28 w-28 rounded-md object-cover"
+                  height={112}
+                  src={primaryImage}
+                  width={112}
+                />
+              </ProfilePhotoGallery>
             ) : (
               <span className="flex h-28 w-28 items-center justify-center rounded-md bg-[#17251f] text-white">
                 <UserRound size={32} />
@@ -219,15 +230,21 @@ export default async function PublicProfilePage(
               <section className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
                 <p className="text-sm font-semibold text-[#607265]">Photos</p>
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  {photos.slice(0, 6).map((photo) => (
-                    <Image
-                      alt="Profile photo"
-                      className="aspect-square rounded-md object-cover"
-                      height={180}
+                  {photos.slice(0, 6).map((photo, photoIndex) => (
+                    <ProfilePhotoGallery
+                      initialIndex={photoIndex}
                       key={photo.id}
-                      src={photo.image_url}
-                      width={180}
-                    />
+                      label={`${publicProfile.display_name ?? "Tribe member"} photo ${photoIndex + 1}`}
+                      photos={galleryPhotos}
+                    >
+                      <Image
+                        alt="Profile photo"
+                        className="aspect-square rounded-md object-cover"
+                        height={180}
+                        src={photo.image_url}
+                        width={180}
+                      />
+                    </ProfilePhotoGallery>
                   ))}
                 </div>
               </section>

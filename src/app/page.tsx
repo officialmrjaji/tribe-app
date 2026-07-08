@@ -29,6 +29,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
@@ -511,20 +512,34 @@ export default function Home() {
                         : "border-[#d8ded1] hover:border-[#9dad9f]",
                     )}
                   >
-                    <button
-                      className="block w-full text-left"
+                    <div
+                      className="block w-full cursor-pointer text-left"
                       aria-label={`View ${profile.name}'s profile details`}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedId(profile.id);
+                        }
+                      }}
                       onClick={() => setSelectedId(profile.id)}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="flex items-start gap-3">
-                        <Image
-                          alt={`${profile.name} avatar`}
-                          className="h-16 w-16 shrink-0 rounded-md object-cover"
-                          height={64}
-                          src={profile.image}
-                          width={64}
-                        />
+                        <ProfilePhotoGallery
+                          label={`View ${profile.name}'s profile photos`}
+                          photos={
+                            profile.photos.length ? profile.photos : [profile.image]
+                          }
+                        >
+                          <Image
+                            alt={`${profile.name} avatar`}
+                            className="h-16 w-16 shrink-0 rounded-md object-cover"
+                            height={64}
+                            src={profile.image}
+                            width={64}
+                          />
+                        </ProfilePhotoGallery>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -621,7 +636,7 @@ export default function Home() {
                           </span>
                         ))}
                       </div>
-                    </button>
+                    </div>
 
                     <div className="mt-4 flex items-center gap-2 border-t border-[#e2e6dc] pt-3">
                       <button
@@ -718,13 +733,18 @@ function SelectedProfilePanel({
   return (
     <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <Image
-          alt={`${profile.name} avatar`}
-          className="h-20 w-20 rounded-md object-cover"
-          height={80}
-          src={profile.image}
-          width={80}
-        />
+        <ProfilePhotoGallery
+          label={`View ${profile.name}'s profile photos`}
+          photos={profile.photos.length ? profile.photos : [profile.image]}
+        >
+          <Image
+            alt={`${profile.name} avatar`}
+            className="h-20 w-20 rounded-md object-cover"
+            height={80}
+            src={profile.image}
+            width={80}
+          />
+        </ProfilePhotoGallery>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[#607265]">
             Selected signal
@@ -762,14 +782,20 @@ function SelectedProfilePanel({
       {profile.photos.length > 1 ? (
         <div className="mt-4 grid grid-cols-3 gap-2">
           {profile.photos.slice(0, 3).map((photo, index) => (
-            <Image
-              alt={`${profile.name} profile photo ${index + 1}`}
-              className="aspect-square rounded-md object-cover"
-              height={96}
+            <ProfilePhotoGallery
+              initialIndex={index}
               key={`${photo}-${index}`}
-              src={photo}
-              width={96}
-            />
+              label={`View ${profile.name} profile photo ${index + 1}`}
+              photos={profile.photos}
+            >
+              <Image
+                alt={`${profile.name} profile photo ${index + 1}`}
+                className="aspect-square rounded-md object-cover"
+                height={96}
+                src={photo}
+                width={96}
+              />
+            </ProfilePhotoGallery>
           ))}
         </div>
       ) : null}

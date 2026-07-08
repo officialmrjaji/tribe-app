@@ -1,22 +1,15 @@
 "use client";
 
 import { Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
-
-const confirmationText = "REQUEST DELETE";
+import { useState } from "react";
 
 type RequestState = "idle" | "submitting" | "submitted" | "error";
 
 export function AccountDeletionRequest() {
   const [accepted, setAccepted] = useState(false);
-  const [confirmation, setConfirmation] = useState("");
   const [message, setMessage] = useState("");
   const [state, setState] = useState<RequestState>("idle");
-
-  const canSubmit = useMemo(
-    () => accepted && confirmation.trim().toUpperCase() === confirmationText,
-    [accepted, confirmation],
-  );
+  const canSubmit = accepted;
 
   async function requestDeletion() {
     if (!canSubmit || state === "submitting") {
@@ -51,7 +44,7 @@ export function AccountDeletionRequest() {
       setMessage(
         payload?.alreadyRequested
           ? "Your account deletion request is already in the safety review queue."
-          : "Your account deletion request has been sent to the safety review queue.",
+          : "Your account deletion request has been sent for safety review. Your account has not been deleted yet.",
       );
     } catch (error) {
       setState("error");
@@ -70,10 +63,8 @@ export function AccountDeletionRequest() {
         Request account deletion
       </p>
       <p className="mt-2 text-sm leading-6 text-[#34443a]">
-        Full deletion is not automatic yet because it must safely remove your
-        account, media, payment history, activity, and safety records across all
-        our systems. This sends a deletion request for review without
-        permanently deleting anything today.
+        Your account and all associated data will be permanently deleted. This
+        action cannot be undone.
       </p>
 
       <div className="mt-4 space-y-3 rounded-md border border-[#f0c0b4] bg-[#fff8f5] p-3">
@@ -84,16 +75,10 @@ export function AccountDeletionRequest() {
             onChange={(event) => setAccepted(event.target.checked)}
             type="checkbox"
           />
-          <span>I understand this will permanently remove my account.</span>
-        </label>
-
-        <label className="block text-sm font-semibold text-[#34443a]">
-          Type {confirmationText} to continue
-          <input
-            className="mt-2 w-full rounded-md border border-[#f0c0b4] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#8a3325] focus:ring-2 focus:ring-[#ef8f7a]/30"
-            onChange={(event) => setConfirmation(event.target.value)}
-            value={confirmation}
-          />
+          <span>
+            I understand that this action will permanently delete my account and
+            cannot be undone.
+          </span>
         </label>
 
         <button
@@ -103,10 +88,10 @@ export function AccountDeletionRequest() {
           type="button"
         >
           {state === "submitting"
-            ? "Requesting..."
+            ? "Requesting deletion..."
             : state === "submitted"
               ? "Request sent"
-              : "Request account deletion"}
+              : "Delete Account"}
         </button>
 
         {message ? (

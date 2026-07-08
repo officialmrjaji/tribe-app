@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import type { DiscoveryCollectionProfile } from "@/lib/discovery/service";
 
@@ -76,7 +77,7 @@ export function ProfileCollectionGrid({
           (currentProfile) => currentProfile.id !== profile.id,
         ),
       );
-      setMessage(`${profile.name} was restored to discovery.`);
+      setMessage(`${profile.name} was restored to People.`);
     } catch (restoreError) {
       setError(
         restoreError instanceof Error
@@ -175,13 +176,18 @@ export function ProfileCollectionGrid({
               key={profile.id}
             >
               <div className="flex items-start gap-3">
-                <Image
-                  alt={`${profile.name} avatar`}
-                  className="h-16 w-16 shrink-0 rounded-md object-cover"
-                  height={64}
-                  src={profile.image}
-                  width={64}
-                />
+                <ProfilePhotoGallery
+                  label={`View ${profile.name}'s profile photo`}
+                  photos={[profile.image]}
+                >
+                  <Image
+                    alt={`${profile.name} avatar`}
+                    className="h-16 w-16 shrink-0 rounded-md object-cover"
+                    height={64}
+                    src={profile.image}
+                    width={64}
+                  />
+                </ProfilePhotoGallery>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

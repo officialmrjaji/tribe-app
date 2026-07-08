@@ -4,7 +4,12 @@ import {
   type ProfileVerification,
 } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import type { SquarePostInput, SquarePostType } from "./schema";
+import type {
+  SquareCommentEditInput,
+  SquarePostEditInput,
+  SquarePostInput,
+  SquarePostType,
+} from "./schema";
 
 const squareMediaBucket = "square-media";
 const squareMediaMaxBytes = 10 * 1024 * 1024;
@@ -40,6 +45,7 @@ type SquarePostRow = {
   created_at: string;
   deleted_at: string | null;
   id: string;
+  edited_at?: string | null;
   image_storage_path: string | null;
   image_url: string | null;
   is_anonymous: boolean;
@@ -57,7 +63,10 @@ type SquareCommentRow = {
   body: string;
   created_at: string;
   deleted_at: string | null;
+  edited_at?: string | null;
   id: string;
+  like_count?: number;
+  parent_comment_id?: string | null;
   post_id: string;
   status: string;
   updated_at: string;
@@ -144,7 +153,9 @@ export type SquarePost = {
   caption: string | null;
   city: string;
   commentCount: number;
+  comments: SquareComment[];
   createdAt: string;
+  editedAt: string | null;
   hashtags: string[];
   id: string;
   imageUrl: string | null;
@@ -163,8 +174,12 @@ export type SquareComment = {
   author: SquareAuthor;
   body: string;
   createdAt: string;
+  editedAt: string | null;
   id: string;
+  isLiked: boolean;
   isMine: boolean;
+  likeCount: number;
+  parentCommentId: string | null;
 };
 
 export type SquareFeedResult = {
@@ -247,10 +262,16 @@ export async function listSquareFeed({
     (post) => !hiddenUserIds.has(post.author_user_id),
   );
 
+  const hydratedPosts = await hydrateSquarePosts({
+    currentUserId: ownedProfile.account.id,
+    posts: visibleRows,
+  });
+
   return {
-    posts: await hydrateSquarePosts({
+    posts: await attachCommentsToPosts({
       currentUserId: ownedProfile.account.id,
-      posts: visibleRows,
+      hiddenUserIds,
+      posts: hydratedPosts,
     }),
     topics: await listSquareTopics(),
     trendingTopics: await listTrendingTopics(),
@@ -282,14 +303,20 @@ export async function getSquarePostThread(
 
   await assertCanViewSquareUser(ownedProfile.account.id, post.author_user_id);
 
+  const hydratedPost = (
+    await hydrateSquarePosts({
+      currentUserId: ownedProfile.account.id,
+      posts: [post],
+    })
+  )[0];
+  const comments = await listSquareComments(ownedProfile, post.id);
+
   return {
-    comments: await listSquareComments(ownedProfile, post.id),
-    post: (
-      await hydrateSquarePosts({
-        currentUserId: ownedProfile.account.id,
-        posts: [post],
-      })
-    )[0],
+    comments,
+    post: {
+      ...hydratedPost,
+      comments,
+    },
   };
 }
 
@@ -449,10 +476,12 @@ export async function toggleSquareLike({
 export async function createSquareComment({
   body,
   ownedProfile,
+  parentCommentId,
   postId,
 }: {
   body: string;
   ownedProfile: OwnedProfile;
+  parentCommentId?: string;
   postId: string;
 }) {
   const cleanBody = body.trim();
@@ -466,12 +495,28 @@ export async function createSquareComment({
   await assertCanViewSquareUser(ownedProfile.account.id, post.author_user_id);
 
   const supabase = createSupabaseAdminClient();
+  let parentComment: SquareCommentRow | null = null;
+
+  if (parentCommentId) {
+    parentComment = await getActiveComment(parentCommentId);
+
+    if (parentComment.post_id !== postId) {
+      throw new SquareError("Reply target does not belong to this post.", 400);
+    }
+
+    await assertCanViewSquareUser(
+      ownedProfile.account.id,
+      parentComment.author_user_id,
+    );
+  }
+
   const { data, error } = await supabase
     .from("square_comments")
     .insert({
       author_profile_id: ownedProfile.profile.id,
       author_user_id: ownedProfile.account.id,
       body: cleanBody,
+      parent_comment_id: parentCommentId ?? null,
       post_id: postId,
     })
     .select("*")
@@ -496,6 +541,169 @@ export async function createSquareComment({
       currentUserId: ownedProfile.account.id,
     })
   )[0];
+}
+
+export async function updateSquarePost({
+  input,
+  ownedProfile,
+  postId,
+}: {
+  input: SquarePostEditInput;
+  ownedProfile: OwnedProfile;
+  postId: string;
+}) {
+  const post = await getActivePost(postId);
+
+  if (post.author_user_id !== ownedProfile.account.id) {
+    throw new SquareError("You can only edit your own Square posts.", 403);
+  }
+
+  const body = input.body?.trim() ?? post.body ?? "";
+  const caption = input.caption?.trim() ?? post.caption ?? "";
+
+  if (!body && !caption && !post.image_url) {
+    throw new SquareError("Square posts need text or media.", 400);
+  }
+
+  const textForSignals = [body, caption].filter(Boolean).join(" ");
+  const mentions = extractMentionTokens(textForSignals);
+
+  if (post.is_anonymous && mentions.length) {
+    throw new SquareError("Anonymous posts cannot mention other members.", 400);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("square_posts")
+    .update({
+      body: body || null,
+      caption: caption || null,
+      edited_at: now,
+      updated_at: now,
+    })
+    .eq("id", postId)
+    .eq("author_user_id", ownedProfile.account.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error ?? new SquareError("Square post could not be edited.", 500);
+  }
+
+  await replacePostTopics({
+    postId,
+    postType: post.post_type,
+    rawTopics: input.topics ?? [],
+    text: textForSignals,
+  });
+  await replaceMentions({
+    mentionedByUserId: ownedProfile.account.id,
+    postId,
+    tokens: mentions,
+  });
+
+  return (
+    await hydrateSquarePosts({
+      currentUserId: ownedProfile.account.id,
+      posts: [data as SquarePostRow],
+    })
+  )[0];
+}
+
+export async function updateSquareComment({
+  commentId,
+  input,
+  ownedProfile,
+}: {
+  commentId: string;
+  input: SquareCommentEditInput;
+  ownedProfile: OwnedProfile;
+}) {
+  const comment = await getActiveComment(commentId);
+
+  if (comment.author_user_id !== ownedProfile.account.id) {
+    throw new SquareError("You can only edit your own comments.", 403);
+  }
+
+  const cleanBody = input.body.trim();
+
+  if (!cleanBody) {
+    throw new SquareError("Comment cannot be empty.", 400);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("square_comments")
+    .update({
+      body: cleanBody,
+      edited_at: now,
+      updated_at: now,
+    })
+    .eq("id", commentId)
+    .eq("author_user_id", ownedProfile.account.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error ?? new SquareError("Comment could not be edited.", 500);
+  }
+
+  await replaceMentions({
+    commentId,
+    mentionedByUserId: ownedProfile.account.id,
+    tokens: extractMentionTokens(cleanBody),
+  });
+
+  return (
+    await hydrateSquareComments({
+      comments: [data as SquareCommentRow],
+      currentUserId: ownedProfile.account.id,
+    })
+  )[0];
+}
+
+export async function toggleSquareCommentLike({
+  commentId,
+  liked,
+  ownedProfile,
+}: {
+  commentId: string;
+  liked: boolean;
+  ownedProfile: OwnedProfile;
+}) {
+  const comment = await getActiveComment(commentId);
+  await assertCanViewSquareUser(ownedProfile.account.id, comment.author_user_id);
+  const supabase = createSupabaseAdminClient();
+
+  if (liked) {
+    const { error } = await supabase.from("square_comment_likes").upsert(
+      {
+        comment_id: commentId,
+        user_id: ownedProfile.account.id,
+      },
+      { onConflict: "comment_id,user_id" },
+    );
+
+    if (error) {
+      throw error;
+    }
+  } else {
+    const { error } = await supabase
+      .from("square_comment_likes")
+      .delete()
+      .eq("comment_id", commentId)
+      .eq("user_id", ownedProfile.account.id);
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  const likeCount = await refreshCommentLikeCount(commentId);
+
+  return { commentId, liked, likeCount };
 }
 
 export async function deleteSquarePost({
@@ -1075,7 +1283,9 @@ async function hydrateSquarePosts({
       caption: post.caption,
       city: post.city ?? profile?.city ?? "Tribe Square",
       commentCount: post.comment_count,
+      comments: [],
       createdAt: post.created_at,
+      editedAt: post.edited_at ?? null,
       hashtags: postTopics.map((topic) => topic.slug),
       id: post.id,
       imageUrl: post.image_url,
@@ -1105,22 +1315,39 @@ async function hydrateSquareComments({
 
   const supabase = createSupabaseAdminClient();
   const userIds = Array.from(new Set(comments.map((comment) => comment.author_user_id)));
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(
-      "id, user_id, display_name, avatar_url, city, region, country, visibility, email_verified_at, phone_verified_at, identity_verified_at",
-    )
-    .in("user_id", userIds);
+  const commentIds = comments.map((comment) => comment.id);
+  const [profileResult, likeResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "id, user_id, display_name, avatar_url, city, region, country, visibility, email_verified_at, phone_verified_at, identity_verified_at",
+      )
+      .in("user_id", userIds),
+    supabase
+      .from("square_comment_likes")
+      .select("comment_id")
+      .in("comment_id", commentIds)
+      .eq("user_id", currentUserId),
+  ]);
 
-  if (error) {
-    throw error;
+  if (profileResult.error) {
+    throw profileResult.error;
+  }
+
+  if (likeResult.error) {
+    throw likeResult.error;
   }
 
   const profilesByUserId = new Map(
-    ((data ?? []) as SquareProfileRow[]).map((profile) => [
+    ((profileResult.data ?? []) as SquareProfileRow[]).map((profile) => [
       profile.user_id,
       profile,
     ]),
+  );
+  const likedCommentIds = new Set(
+    ((likeResult.data ?? []) as Array<{ comment_id: string }>).map(
+      (row) => row.comment_id,
+    ),
   );
 
   return comments.map((comment) => ({
@@ -1133,8 +1360,12 @@ async function hydrateSquareComments({
     ),
     body: comment.body,
     createdAt: comment.created_at,
+    editedAt: comment.edited_at ?? null,
     id: comment.id,
+    isLiked: likedCommentIds.has(comment.id),
     isMine: comment.author_user_id === currentUserId,
+    likeCount: comment.like_count ?? 0,
+    parentCommentId: comment.parent_comment_id ?? null,
   }));
 }
 
@@ -1389,6 +1620,27 @@ async function getActivePost(postId: string) {
   return data as SquarePostRow;
 }
 
+async function getActiveComment(commentId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("square_comments")
+    .select("*")
+    .eq("id", commentId)
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new SquareError("Comment not found.", 404);
+  }
+
+  return data as SquareCommentRow;
+}
+
 async function assertCanViewSquareUser(viewerUserId: string, authorUserId: string) {
   const hiddenUserIds = await getHiddenSquareUserIds(viewerUserId);
 
@@ -1489,6 +1741,151 @@ async function refreshPostCount(
   }
 
   return nextCount;
+}
+
+async function refreshCommentLikeCount(commentId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { count, error } = await supabase
+    .from("square_comment_likes")
+    .select("comment_id", { count: "exact", head: true })
+    .eq("comment_id", commentId);
+
+  if (error) {
+    throw error;
+  }
+
+  const likeCount = count ?? 0;
+  const { error: updateError } = await supabase
+    .from("square_comments")
+    .update({
+      like_count: likeCount,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", commentId);
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  return likeCount;
+}
+
+async function attachCommentsToPosts({
+  currentUserId,
+  hiddenUserIds,
+  posts,
+}: {
+  currentUserId: string;
+  hiddenUserIds: Set<string>;
+  posts: SquarePost[];
+}) {
+  if (posts.length === 0) {
+    return posts;
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("square_comments")
+    .select("*")
+    .in(
+      "post_id",
+      posts.map((post) => post.id),
+    )
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(240);
+
+  if (error) {
+    throw error;
+  }
+
+  const hydratedComments = await hydrateSquareComments({
+    comments: ((data ?? []) as SquareCommentRow[]).filter(
+      (comment) => !hiddenUserIds.has(comment.author_user_id),
+    ),
+    currentUserId,
+  });
+  const commentsByPostId = new Map<string, SquareComment[]>();
+
+  ((data ?? []) as SquareCommentRow[]).forEach((commentRow) => {
+    const comment = hydratedComments.find(
+      (hydratedComment) => hydratedComment.id === commentRow.id,
+    );
+
+    if (!comment) {
+      return;
+    }
+
+    const postComments = commentsByPostId.get(commentRow.post_id) ?? [];
+    postComments.push(comment);
+    commentsByPostId.set(commentRow.post_id, postComments);
+  });
+
+  return posts.map((post) => ({
+    ...post,
+    comments: commentsByPostId.get(post.id) ?? [],
+  }));
+}
+
+async function replacePostTopics({
+  postId,
+  postType,
+  rawTopics,
+  text,
+}: {
+  postId: string;
+  postType: SquarePostType;
+  rawTopics: string[];
+  text: string;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("square_post_topics")
+    .delete()
+    .eq("post_id", postId);
+
+  if (error) {
+    throw error;
+  }
+
+  await syncPostTopics({ postId, postType, rawTopics, text });
+}
+
+async function replaceMentions({
+  commentId,
+  mentionedByUserId,
+  postId,
+  tokens,
+}: {
+  commentId?: string;
+  mentionedByUserId: string;
+  postId?: string;
+  tokens: string[];
+}) {
+  const supabase = createSupabaseAdminClient();
+  let query = supabase.from("square_mentions").delete();
+
+  if (postId) {
+    query = query.eq("post_id", postId).is("comment_id", null);
+  } else if (commentId) {
+    query = query.eq("comment_id", commentId);
+  } else {
+    return;
+  }
+
+  const { error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  await syncPostMentions({
+    commentId,
+    mentionedByUserId,
+    postId,
+    tokens,
+  });
 }
 
 async function syncPostTopics({

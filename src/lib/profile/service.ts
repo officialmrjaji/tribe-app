@@ -7,7 +7,7 @@ const profileMediaBucket = "profile-media";
 const profileMediaMaxBytes = 10 * 1024 * 1024;
 export const minimumDiscoveryPhotoCount = 3;
 export const profilePhotoRequirementMessage =
-  "Upload at least 3 real profile photos to unlock discovery.";
+  "Upload at least 3 real profile photos to unlock People.";
 const profilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 const profileVoiceMimeTypes = [
   "audio/mpeg",

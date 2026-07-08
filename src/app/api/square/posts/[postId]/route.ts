@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSquareSession, squareErrorResponse } from "@/lib/square/api";
-import { deleteSquarePost, getSquarePostThread } from "@/lib/square/service";
+import { squarePostEditInputSchema } from "@/lib/square/schema";
+import {
+  deleteSquarePost,
+  getSquarePostThread,
+  updateSquarePost,
+} from "@/lib/square/service";
 
 type SquarePostContext = {
   params: Promise<{ postId: string }>;
@@ -23,11 +28,38 @@ export async function GET(_request: Request, context: SquarePostContext) {
   }
 }
 
-export async function PATCH() {
-  return NextResponse.json(
-    { error: "Square post editing is not included in the MVP." },
-    { status: 501 },
-  );
+export async function PATCH(request: Request, context: SquarePostContext) {
+  try {
+    const session = await getSquareSession();
+
+    if ("response" in session) {
+      return session.response;
+    }
+
+    const payload = await request.json();
+    const parsedPayload = squarePostEditInputSchema.safeParse(payload);
+
+    if (!parsedPayload.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid Square post edit payload.",
+          issues: parsedPayload.error.issues,
+        },
+        { status: 400 },
+      );
+    }
+
+    const { postId } = await context.params;
+    const post = await updateSquarePost({
+      input: parsedPayload.data,
+      ownedProfile: session.ownedProfile,
+      postId,
+    });
+
+    return NextResponse.json({ post });
+  } catch (error) {
+    return squareErrorResponse(error, "Square post could not be edited.");
+  }
 }
 
 export async function DELETE(_request: Request, context: SquarePostContext) {

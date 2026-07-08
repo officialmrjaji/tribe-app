@@ -96,6 +96,17 @@ export const squarePostInputSchema = z.object({
 
 export const squareCommentInputSchema = z.object({
   body: z.string().trim().min(1).max(1000),
+  parentCommentId: z.string().uuid().optional(),
+});
+
+export const squarePostEditInputSchema = z.object({
+  body: optionalText(1400),
+  caption: optionalText(280),
+  topics: optionalStringArray(6, 48),
+});
+
+export const squareCommentEditInputSchema = z.object({
+  body: z.string().trim().min(1).max(1000),
 });
 
 export const squareRepostInputSchema = z.object({
@@ -112,3 +123,5 @@ export const squarePollVoteInputSchema = z.object({
 });
 
 export type SquarePostInput = z.infer<typeof squarePostInputSchema>;
+export type SquarePostEditInput = z.infer<typeof squarePostEditInputSchema>;
+export type SquareCommentEditInput = z.infer<typeof squareCommentEditInputSchema>;
