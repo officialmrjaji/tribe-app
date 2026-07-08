@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { hasBetaAccess } from "@/lib/beta/service";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
 import {
   ensureOwnedProfile,
@@ -32,6 +33,10 @@ export default async function OnboardingPage() {
 
   if (onboarding.completed) {
     redirect("/");
+  }
+
+  if (!(await hasBetaAccess(ownedProfile.account.id))) {
+    redirect("/beta");
   }
 
   return (

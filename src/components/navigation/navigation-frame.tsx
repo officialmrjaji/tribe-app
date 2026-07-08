@@ -62,11 +62,12 @@ const primaryDestinations = [
       "/premium",
       "/ai",
       "/admin",
+      "/feedback",
     ],
   },
 ] as const;
 
-const hiddenPrefixes = ["/onboarding", "/sign-in", "/sign-up"] as const;
+const hiddenPrefixes = ["/beta", "/onboarding", "/sign-in", "/sign-up"] as const;
 
 const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");

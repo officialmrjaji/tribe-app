@@ -6,7 +6,7 @@ export type HealthComponentStatus = "degraded" | "healthy" | "unhealthy";
 export type HealthCheckResult = {
   checkedAt: string;
   components: Record<
-    "ai" | "authentication" | "database" | "payments" | "storage" | "voice",
+    "ai" | "authentication" | "beta" | "database" | "payments" | "storage" | "voice",
     {
       message: string;
       status: HealthComponentStatus;
@@ -17,7 +17,8 @@ export type HealthCheckResult = {
 
 export async function getHealthStatus(): Promise<HealthCheckResult> {
   const checkedAt = new Date().toISOString();
-  const [database, storage, voice] = await Promise.all([
+  const [beta, database, storage, voice] = await Promise.all([
+    checkBetaAccess(),
     checkDatabase(),
     checkStorage(),
     checkVoice(),
@@ -37,6 +38,7 @@ export async function getHealthStatus(): Promise<HealthCheckResult> {
       label: "Authentication",
       variables: ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY"],
     }),
+    beta,
     database,
     payments:
       isFeatureEnabled("premium") && isFeatureEnabled("payments")
@@ -62,6 +64,34 @@ export async function getHealthStatus(): Promise<HealthCheckResult> {
     components,
     status,
   };
+}
+
+async function checkBetaAccess() {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [inviteCodes, feedback] = await Promise.all([
+      supabase.from("invite_codes").select("id").limit(1),
+      supabase.from("beta_feedback").select("id").limit(1),
+    ]);
+
+    if (inviteCodes.error) {
+      throw inviteCodes.error;
+    }
+
+    if (feedback.error) {
+      throw feedback.error;
+    }
+
+    return {
+      message: "Private beta access and feedback tables are reachable.",
+      status: "healthy" as const,
+    };
+  } catch (error) {
+    return {
+      message: getErrorMessage(error),
+      status: "unhealthy" as const,
+    };
+  }
 }
 
 async function checkDatabase() {
@@ -162,5 +192,13 @@ function checkEnvironmentPair({
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    return String(error.message);
+  }
+
+  return String(error);
 }

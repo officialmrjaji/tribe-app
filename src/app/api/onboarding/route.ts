@@ -4,6 +4,7 @@ import {
   getOnboardingStatus,
   saveOnboardingResponse,
 } from "@/lib/onboarding/service";
+import { assertBetaAccess } from "@/lib/beta/service";
 import { onboardingInputSchema } from "@/lib/onboarding/schema";
 import { ensureOwnedProfile, getPrimaryEmail } from "@/lib/profile/service";
 
@@ -84,6 +85,10 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
+    }
+
+    if (!session.ownedProfile.profile.onboarding_completed_at) {
+      await assertBetaAccess(session.ownedProfile.account.id);
     }
 
     const onboarding = await saveOnboardingResponse(

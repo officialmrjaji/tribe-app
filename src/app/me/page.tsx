@@ -1,6 +1,7 @@
 import {
   Bell,
   CreditCard,
+  MessageSquareText,
   Mic,
   ShieldCheck,
   Sparkles,
@@ -70,6 +71,12 @@ const meActions: MeAction[] = [
     href: "/safety",
     icon: ShieldCheck,
     label: "Safety Center",
+  },
+  {
+    body: "Share bugs, confusing moments, safety concerns, and ideas with the private beta team.",
+    href: "/feedback",
+    icon: MessageSquareText,
+    label: "Beta Feedback",
   },
   {
     body: "Review activity updates and mark notifications as read.",

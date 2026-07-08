@@ -3,6 +3,7 @@ import {
   CreditCard,
   Flag,
   Gauge,
+  KeyRound,
   Megaphone,
   Mic,
   Search,
@@ -229,6 +230,57 @@ export default async function AdminPage({
         </section>
 
         <section className="mt-4 grid gap-4 xl:grid-cols-2">
+          <Panel icon={KeyRound} title="Private beta invites">
+            {dashboard.betaInvites.length ? (
+              <div className="space-y-2">
+                {dashboard.betaInvites.map((invite) => (
+                  <div
+                    className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3"
+                    key={`${invite.codeLabel}-${invite.createdAt}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-mono text-sm font-semibold">
+                        {invite.codeLabel}
+                      </p>
+                      <p className="text-xs font-semibold uppercase text-[#607265]">
+                        {invite.active ? "Active" : "Inactive"} /{" "}
+                        {invite.usedCount} of {invite.maxUses} used
+                      </p>
+                    </div>
+                    {invite.expiresAt ? (
+                      <p className="mt-1 text-xs text-[#607265]">
+                        Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                      </p>
+                    ) : null}
+                    {invite.redemptions.length ? (
+                      <div className="mt-3 space-y-1 border-t border-[#e2e6dc] pt-2">
+                        {invite.redemptions.map((redemption) => (
+                          <p
+                            className="flex flex-wrap justify-between gap-2 text-xs text-[#34443a]"
+                            key={`${redemption.email}-${redemption.redeemedAt}`}
+                          >
+                            <span>{redemption.email}</span>
+                            <span className="text-[#607265]">
+                              {new Date(redemption.redeemedAt).toLocaleDateString()}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-[#607265]">
+                        No redemptions yet.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm leading-6 text-[#34443a]">
+                Create an invite code in the private beta database table to
+                begin inviting testers.
+              </p>
+            )}
+          </Panel>
           <Panel icon={Flag} title="Feature flags">
             <div className="space-y-2">
               {dashboard.featureFlags.map((flag) => (

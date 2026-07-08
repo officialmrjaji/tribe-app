@@ -1,6 +1,7 @@
 import { auth, currentUser, type User } from "@clerk/nextjs/server";
 import { forbidden, unauthorized } from "@/lib/api/errors";
 import { getAnalyticsOverview } from "@/lib/analytics/service";
+import { listBetaInviteUsage } from "@/lib/beta/service";
 import {
   ensureOwnedProfile,
   getPrimaryEmail,
@@ -143,6 +144,7 @@ export async function getAdminDashboard({
     voiceRooms,
     featureFlags,
     announcements,
+    betaInvites,
   ] = await Promise.all([
     countRows("users"),
     countRows("profiles"),
@@ -167,11 +169,13 @@ export async function getAdminDashboard({
     listVoiceRoomsOverview(),
     listFeatureFlags(),
     listAnnouncements(),
+    listBetaInviteUsage(),
   ]);
 
   return {
     analytics,
     announcements,
+    betaInvites,
     featureFlags,
     moderationQueue,
     overview: {
