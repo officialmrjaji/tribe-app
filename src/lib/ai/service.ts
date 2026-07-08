@@ -1,4 +1,5 @@
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { getConversationMessages } from "@/lib/messaging/service";
 import {
   availabilityLabels,
@@ -152,6 +153,8 @@ export async function generateProfileCoachSuggestions({
   input: AIProfileCoachInput;
   ownedProfile: OwnedProfile;
 }) {
+  assertAICompanionEnabled();
+
   const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
   const prompt = [
     "Improve this member's profile without changing their intent or identity.",
@@ -189,6 +192,8 @@ export async function generateMatchCoachExplanation({
   input: AIMatchCoachInput;
   ownedProfile: OwnedProfile;
 }) {
+  assertAICompanionEnabled();
+
   const matchContext = input.profileId
     ? await getMatchContext(ownedProfile, input.profileId)
     : null;
@@ -227,6 +232,8 @@ export async function generateConversationCoachSuggestions({
   input: AIConversationCoachInput;
   ownedProfile: OwnedProfile;
 }) {
+  assertAICompanionEnabled();
+
   const conversationContext = input.conversationId
     ? await getConversationContext(ownedProfile, input.conversationId)
     : null;
@@ -270,6 +277,8 @@ export async function runAISafetyCheck({
   input: AISafetyCheckInput;
   ownedProfile: OwnedProfile;
 }) {
+  assertAICompanionEnabled();
+
   const prompt = [
     "Detect whether the content appears to contain spam, harassment, or scam signals.",
     "This is advisory safety support. Do not punish users. Provide a short recommendation for a human/user action.",
@@ -444,4 +453,13 @@ function summarizeText(value: string, maxLength = 220) {
   }
 
   return `${trimmed.slice(0, maxLength - 3)}...`;
+}
+
+function assertAICompanionEnabled() {
+  if (!isFeatureEnabled("ai")) {
+    throw new AICompanionError(
+      "AI Companion is coming soon. We are working hard to bring this feature to you.",
+      503,
+    );
+  }
 }

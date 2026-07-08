@@ -2,11 +2,7 @@ import { ArrowLeft, CheckCircle2, Crown, XCircle } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import {
-  PremiumError,
-  verifyPremiumPurchaseForUser,
-} from "@/lib/premium/service";
-import { PaystackError } from "@/lib/premium/paystack";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
 type VerifyPageProps = {
   searchParams: Promise<{
@@ -32,12 +28,20 @@ export default async function PremiumCheckoutVerifyPage({
     title: string;
     tone: "error" | "success";
   } = {
-    message: "The payment provider did not return a payment reference.",
-    title: "Payment reference missing",
-    tone: "error",
+    message:
+      "Premium memberships are almost here. Checkout verification is paused for private beta.",
+    title: "Tribe Plus is coming soon",
+    tone: "success",
   };
 
-  if (!reference) {
+  if (!isFeatureEnabled("premium") || !isFeatureEnabled("payments")) {
+    state = {
+      message:
+        "Premium memberships are almost here. Checkout verification is paused for private beta.",
+      title: "Tribe Plus is coming soon",
+      tone: "success",
+    };
+  } else if (!reference) {
     state = {
       message: "The payment provider did not return a payment reference.",
       title: "Payment reference missing",
@@ -45,6 +49,9 @@ export default async function PremiumCheckoutVerifyPage({
     };
   } else {
     try {
+      const { verifyPremiumPurchaseForUser } = await import(
+        "@/lib/premium/service"
+      );
       const result = await verifyPremiumPurchaseForUser({
         ownedProfile: session.ownedProfile,
         reference,
@@ -61,7 +68,7 @@ export default async function PremiumCheckoutVerifyPage({
     } catch (error) {
       state = {
         message:
-          error instanceof PremiumError || error instanceof PaystackError
+          error instanceof Error
             ? error.message
             : "The payment could not be verified yet.",
         title: "Verification needs attention",

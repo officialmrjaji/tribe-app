@@ -13,13 +13,26 @@ import { PremiumBadge } from "@/components/premium/premium-badge";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import {
+  getFeatureFlags,
+  type FeatureFlagKey,
+  type FeatureFlagState,
+} from "@/lib/feature-flags";
+import {
   getProfileQuality,
   getProfileVerification,
 } from "@/lib/profile/service";
 import { getPremiumStatus } from "@/lib/premium/service";
 import { AccountActions } from "../settings/account-actions";
 
-const meActions = [
+type MeAction = {
+  body: string;
+  feature?: FeatureFlagKey;
+  href: string;
+  icon: LucideIcon;
+  label: string;
+};
+
+const meActions: MeAction[] = [
   {
     body: "Update your photos, prompts, voice intro, visibility, and profile basics.",
     href: "/profile/edit",
@@ -31,12 +44,14 @@ const meActions = [
     href: "/ai",
     icon: Sparkles,
     label: "AI Coach",
+    feature: "ai",
   },
   {
     body: "Review Tribe Plus, boosts, usage counters, restore purchases, and subscription status.",
     href: "/premium",
     icon: CreditCard,
     label: "Premium",
+    feature: "premium",
   },
   {
     body: "Record or update the voice intro people hear on your profile.",
@@ -67,8 +82,9 @@ const meActions = [
     href: "/premium/manage",
     icon: CreditCard,
     label: "Subscription",
+    feature: "premium",
   },
-] as const;
+];
 
 export default async function MePage() {
   const session = await getCurrentOwnedProfile();
@@ -83,6 +99,7 @@ export default async function MePage() {
   ]);
   const { profile } = session.ownedProfile;
   const displayName = profile.display_name || "Your profile";
+  const featureFlags = getFeatureFlags();
 
   return (
     <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
@@ -129,7 +146,13 @@ export default async function MePage() {
 
         <section className="mt-6 grid gap-4 md:grid-cols-2">
           {meActions.map((action) => (
-            <MeActionCard action={action} key={action.label} />
+            <MeActionCard
+              action={action}
+              feature={
+                action.feature ? featureFlags[action.feature] : undefined
+              }
+              key={action.label}
+            />
           ))}
         </section>
 
@@ -141,24 +164,35 @@ export default async function MePage() {
 
 function MeActionCard({
   action,
+  feature,
 }: {
   action: {
     body: string;
+    feature?: FeatureFlagKey;
     href: string;
     icon: LucideIcon;
     label: string;
   };
+  feature?: FeatureFlagState;
 }) {
   const Icon = action.icon;
+  const comingSoon = feature ? !feature.enabled : false;
 
   return (
     <Link
-      className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f] hover:bg-[#fbfaf4]"
+      className={`rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f] hover:bg-[#fbfaf4] ${
+        comingSoon ? "opacity-75" : ""
+      }`}
       href={action.href}
     >
       <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
         <Icon size={16} />
         {action.label}
+        {comingSoon ? (
+          <span className="ml-auto rounded-md bg-[#e1f0e9] px-2 py-1 text-[11px] font-bold uppercase text-[#23624f]">
+            Coming Soon
+          </span>
+        ) : null}
       </p>
       <p className="mt-2 text-sm leading-6 text-[#34443a]">{action.body}</p>
     </Link>

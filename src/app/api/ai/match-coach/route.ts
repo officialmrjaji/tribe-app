@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import { OpenAIServiceError } from "@/lib/ai/openai";
 import { aiMatchCoachInputSchema } from "@/lib/ai/schema";
-import {
-  AICompanionError,
-  generateMatchCoachExplanation,
-} from "@/lib/ai/service";
+import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { disabledFeatureResponse } from "@/lib/feature-response";
 
 export async function POST(request: Request) {
   try {
@@ -16,6 +13,10 @@ export async function POST(request: Request) {
         { error: session.error },
         { status: session.status },
       );
+    }
+
+    if (!isFeatureEnabled("ai")) {
+      return disabledFeatureResponse("ai");
     }
 
     const parsedPayload = aiMatchCoachInputSchema.safeParse(
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const { generateMatchCoachExplanation } = await import(
+      "@/lib/ai/service"
+    );
     const result = await generateMatchCoachExplanation({
       input: parsedPayload.data,
       ownedProfile: session.ownedProfile,
@@ -41,10 +45,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
-    if (error instanceof AICompanionError || error instanceof OpenAIServiceError) {
+    const status = getServiceErrorStatus(error);
+
+    if (status) {
       return NextResponse.json(
-        { error: error.message },
-        { status: error.status },
+        { error: error instanceof Error ? error.message : "AI Companion error." },
+        { status },
       );
     }
 
@@ -53,4 +59,13 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function getServiceErrorStatus(error: unknown) {
+  return error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof error.status === "number"
+    ? error.status
+    : null;
 }

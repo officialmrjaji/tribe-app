@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  verifyPaystackWebhookSignature,
-  PaystackError,
-} from "@/lib/premium/paystack";
-import {
-  PremiumError,
-  verifyPremiumPurchaseByReference,
-} from "@/lib/premium/service";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
 type PaystackWebhookPayload = {
   data?: {
@@ -16,13 +9,29 @@ type PaystackWebhookPayload = {
 };
 
 export async function POST(request: Request) {
+  if (!isFeatureEnabled("premium") || !isFeatureEnabled("payments")) {
+    return NextResponse.json({
+      disabled: true,
+      received: true,
+      status: "coming_soon",
+    });
+  }
+
   const rawBody = await request.text();
   const signature = request.headers.get("x-paystack-signature");
 
   try {
+    const [
+      { verifyPaystackWebhookSignature },
+      { verifyPremiumPurchaseByReference },
+    ] = await Promise.all([
+      import("@/lib/premium/paystack"),
+      import("@/lib/premium/service"),
+    ]);
+
     if (!verifyPaystackWebhookSignature({ rawBody, signature })) {
       return NextResponse.json(
-        { error: "Invalid Paystack webhook signature." },
+        { error: "Invalid payment webhook signature." },
         { status: 401 },
       );
     }
@@ -48,10 +57,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
-    if (error instanceof PremiumError || error instanceof PaystackError) {
+    const status = getServiceErrorStatus(error);
+
+    if (status) {
       return NextResponse.json(
-        { error: error.message },
-        { status: error.status },
+        { error: error instanceof Error ? error.message : "Premium error." },
+        { status },
       );
     }
 
@@ -60,4 +71,13 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function getServiceErrorStatus(error: unknown) {
+  return error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof error.status === "number"
+    ? error.status
+    : null;
 }

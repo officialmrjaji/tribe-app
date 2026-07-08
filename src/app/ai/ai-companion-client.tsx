@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -28,6 +29,7 @@ import {
   type Interest,
 } from "@/lib/onboarding/options";
 import type { OnboardingSnapshot } from "@/lib/onboarding/service";
+import type { FeatureFlagState } from "@/lib/feature-flags";
 
 type ProfileDraft = {
   bio: string;
@@ -41,6 +43,7 @@ type PromptDraft = {
 
 type AICompanionClientProps = {
   conversations: ConversationSummary[];
+  feature: FeatureFlagState;
   matches: DiscoveryProfile[];
   onboarding: OnboardingSnapshot | null;
   profile: ProfileDraft;
@@ -76,7 +79,15 @@ const contentTypes = [
   { label: "Other", value: "other" },
 ] as const;
 
-export default function AICompanionClient({
+export default function AICompanionClient(props: AICompanionClientProps) {
+  if (!props.feature.enabled) {
+    return <AICompanionComingSoon feature={props.feature} />;
+  }
+
+  return <AICompanionEnabled {...props} />;
+}
+
+function AICompanionEnabled({
   conversations,
   matches,
   onboarding,
@@ -448,6 +459,168 @@ export default function AICompanionClient({
         </section>
       </div>
     </main>
+  );
+}
+
+function AICompanionComingSoon({ feature }: { feature: FeatureFlagState }) {
+  const [showModal, setShowModal] = useState(false);
+  const previewCards = [
+    {
+      body: "Draft better bios, prompts, and profile details without losing your own voice.",
+      icon: UserRound,
+      title: "Profile coaching",
+    },
+    {
+      body: "Understand compatibility with clearer, more thoughtful match context.",
+      icon: Heart,
+      title: "Match explanations",
+    },
+    {
+      body: "Get first-message ideas that stay warm, respectful, and low pressure.",
+      icon: MessageCircle,
+      title: "Conversation starters",
+    },
+    {
+      body: "Use extra assistance for spam, harassment, and scam awareness.",
+      icon: ShieldCheck,
+      title: "Safety support",
+    },
+  ] as const;
+
+  return (
+    <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl">
+        <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <Link
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[#607265] transition hover:text-[#17251f]"
+              href="/me"
+            >
+              <ArrowLeft size={16} />
+              Me
+            </Link>
+            <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
+              <Sparkles size={16} />
+              AI Companion
+              <ComingSoonBadge label={feature.badgeLabel} />
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold">
+              Our AI Companion is almost ready.
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
+              We are polishing optional AI support before private beta members
+              can use it. The preview is visible, but no AI requests are active.
+            </p>
+          </div>
+          <button
+            className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+            onClick={() => setShowModal(true)}
+            type="button"
+          >
+            Coming Soon
+          </button>
+        </header>
+
+        <section
+          aria-label="AI Companion preview"
+          className="mt-6 grid gap-4 opacity-70 md:grid-cols-2"
+        >
+          {previewCards.map((card) => {
+            const Icon = card.icon;
+
+            return (
+              <button
+                className="rounded-lg border border-[#d8ded1] bg-white p-5 text-left shadow-sm transition hover:border-[#9dad9f] hover:bg-[#fbfaf4]"
+                key={card.title}
+                onClick={() => setShowModal(true)}
+                type="button"
+              >
+                <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                  <Icon size={16} />
+                  {card.title}
+                  <ComingSoonBadge label="Coming Soon" />
+                </p>
+                <p className="mt-3 text-sm leading-6 text-[#34443a]">
+                  {card.body}
+                </p>
+                <span className="mt-4 inline-flex h-9 items-center rounded-md border border-[#cbd4c6] bg-[#f3f8f5] px-3 text-sm font-semibold text-[#607265]">
+                  Disabled for private beta
+                </span>
+              </button>
+            );
+          })}
+        </section>
+      </div>
+
+      {showModal ? (
+        <ComingSoonModal
+          feature={feature}
+          onClose={() => setShowModal(false)}
+        />
+      ) : null}
+    </main>
+  );
+}
+
+function ComingSoonBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-md bg-[#e1f0e9] px-2 py-1 text-[11px] font-bold uppercase text-[#23624f]">
+      {label}
+    </span>
+  );
+}
+
+function ComingSoonModal({
+  feature,
+  onClose,
+}: {
+  feature: FeatureFlagState;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#08110d]/55 px-4"
+      role="dialog"
+    >
+      <section className="w-full max-w-md rounded-lg border border-[#d8ded1] bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+              <Sparkles size={16} />
+              {feature.label}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold">{feature.title}</h2>
+          </div>
+          <button
+            aria-label="Close coming soon dialog"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-[#d8ded1] text-[#607265] transition hover:bg-[#f3f8f5]"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-[#34443a]">
+          Soon you&apos;ll be able to:
+        </p>
+        <ul className="mt-3 space-y-2 text-sm text-[#34443a]">
+          {feature.bullets.map((item) => (
+            <li className="flex gap-2" key={item}>
+              <Check className="mt-0.5 text-[#23624f]" size={15} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          className="mt-5 flex h-10 w-full items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+          onClick={onClose}
+          type="button"
+        >
+          Coming Soon
+        </button>
+      </section>
+    </div>
   );
 }
 

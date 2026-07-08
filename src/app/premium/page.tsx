@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import { getFeatureFlags } from "@/lib/feature-flags";
 import {
   boostPlanOptions,
   getPremiumStatus,
@@ -15,10 +16,13 @@ export default async function PremiumPage() {
   }
 
   const status = await getPremiumStatus(session.ownedProfile);
+  const featureFlags = getFeatureFlags();
 
   return (
     <UpgradePageClient
       boostPlans={boostPlanOptions}
+      feature={featureFlags.premium}
+      paymentsFeature={featureFlags.payments}
       initialStatus={status}
       premiumPlans={premiumPlanOptions}
     />

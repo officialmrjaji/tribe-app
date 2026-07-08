@@ -11,16 +11,20 @@ import {
   RefreshCcw,
   ShieldCheck,
   Sparkles,
+  X,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import type { FeatureFlagState } from "@/lib/feature-flags";
 import type { PremiumPlan, PremiumStatus } from "@/lib/premium/service";
 
 type UpgradePageClientProps = {
   boostPlans: PremiumPlan[];
+  feature: FeatureFlagState;
   initialStatus: PremiumStatus;
+  paymentsFeature: FeatureFlagState;
   premiumPlans: PremiumPlan[];
 };
 
@@ -65,16 +69,20 @@ const premiumFeatures = [
 
 export default function UpgradePageClient({
   boostPlans,
+  feature,
   initialStatus,
+  paymentsFeature,
   premiumPlans,
 }: UpgradePageClientProps) {
   const [checkoutPlanCode, setCheckoutPlanCode] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showComingSoon, setShowComingSoon] = useState(false);
   const [restoreStatus, setRestoreStatus] = useState<
     "idle" | "loading" | "ready"
   >("idle");
   const [status, setStatus] = useState(initialStatus);
+  const premiumActionsEnabled = feature.enabled && paymentsFeature.enabled;
   const activeStatusText = useMemo(() => {
     if (status.subscription) {
       return `Tribe Plus active until ${formatDate(status.subscription.endsAt)}.`;
@@ -84,6 +92,11 @@ export default function UpgradePageClient({
   }, [status.subscription]);
 
   async function startCheckout(planCode: string) {
+    if (!premiumActionsEnabled) {
+      setShowComingSoon(true);
+      return;
+    }
+
     setCheckoutPlanCode(planCode);
     setError("");
     setMessage("");
@@ -114,6 +127,11 @@ export default function UpgradePageClient({
   }
 
   async function restorePurchases() {
+    if (!premiumActionsEnabled) {
+      setShowComingSoon(true);
+      return;
+    }
+
     setRestoreStatus("loading");
     setError("");
     setMessage("");
@@ -165,6 +183,9 @@ export default function UpgradePageClient({
             <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#607265]">
               <Crown size={16} />
               Tribe Premium
+              {!premiumActionsEnabled ? (
+                <ComingSoonBadge label={feature.badgeLabel} />
+              ) : null}
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
               Upgrade discovery without changing the tone.
@@ -173,6 +194,12 @@ export default function UpgradePageClient({
               Tribe Plus unlocks more control, insight, and visibility while
               keeping core matching, messaging, and safety free.
             </p>
+            {!premiumActionsEnabled ? (
+              <p className="mt-3 max-w-2xl rounded-md border border-[#cfe5d8] bg-[#f3f8f5] px-3 py-2 text-sm font-semibold text-[#23624f]">
+                Premium memberships are visible for preview. Checkout and
+                restore actions are paused for private beta.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link
@@ -183,16 +210,18 @@ export default function UpgradePageClient({
             </Link>
             <button
               className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-              disabled={restoreStatus === "loading"}
+              disabled={!premiumActionsEnabled || restoreStatus === "loading"}
               onClick={restorePurchases}
               type="button"
             >
-              {restoreStatus === "loading" ? (
+              {!premiumActionsEnabled ? (
+                <RefreshCcw size={16} />
+              ) : restoreStatus === "loading" ? (
                 <LoaderCircle className="animate-spin" size={16} />
               ) : (
                 <RefreshCcw size={16} />
               )}
-              Restore purchases
+              {premiumActionsEnabled ? "Restore purchases" : "Available Soon"}
             </button>
           </div>
         </header>
@@ -288,8 +317,10 @@ export default function UpgradePageClient({
             {premiumPlans.map((plan) => (
               <PlanCard
                 busy={checkoutPlanCode === plan.code}
+                enabled={premiumActionsEnabled}
                 key={plan.code}
                 onCheckout={() => startCheckout(plan.code)}
+                onComingSoon={() => setShowComingSoon(true)}
                 plan={plan}
               />
             ))}
@@ -305,8 +336,10 @@ export default function UpgradePageClient({
             {boostPlans.map((plan) => (
               <PlanCard
                 busy={checkoutPlanCode === plan.code}
+                enabled={premiumActionsEnabled}
                 key={plan.code}
                 onCheckout={() => startCheckout(plan.code)}
+                onComingSoon={() => setShowComingSoon(true)}
                 plan={plan}
               />
             ))}
@@ -339,23 +372,51 @@ export default function UpgradePageClient({
           </div>
         </section>
       </div>
+      {showComingSoon ? (
+        <PremiumComingSoonModal
+          feature={feature}
+          onClose={() => setShowComingSoon(false)}
+        />
+      ) : null}
     </main>
   );
 }
 
 function PlanCard({
   busy,
+  enabled,
   onCheckout,
+  onComingSoon,
   plan,
 }: {
   busy: boolean;
+  enabled: boolean;
   onCheckout: () => void;
+  onComingSoon: () => void;
   plan: PremiumPlan;
 }) {
+  function handlePreviewOpen() {
+    if (!enabled) {
+      onComingSoon();
+    }
+  }
+
   return (
-    <article className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+    <article
+      className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f]"
+      onClick={handlePreviewOpen}
+      onKeyDown={(event) => {
+        if (!enabled && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onComingSoon();
+        }
+      }}
+      role={!enabled ? "button" : undefined}
+      tabIndex={!enabled ? 0 : undefined}
+    >
       <p className="text-sm font-semibold text-[#607265]">
         {plan.productType === "premium" ? "Premium" : "Boost"}
+        {!enabled ? <ComingSoonBadge label="Coming Soon" /> : null}
       </p>
       <h3 className="mt-1 text-lg font-semibold">{plan.name}</h3>
       <p className="mt-2 text-2xl font-bold">{formatCurrency(plan.priceKobo)}</p>
@@ -367,14 +428,80 @@ function PlanCard({
       </p>
       <button
         className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-        disabled={busy}
+        disabled={!enabled || busy}
         onClick={onCheckout}
         type="button"
       >
-        {busy ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />}
-        Choose plan
+        {busy ? (
+          <LoaderCircle className="animate-spin" size={16} />
+        ) : (
+          <Check size={16} />
+        )}
+        {enabled ? "Choose plan" : "Coming Soon"}
       </button>
     </article>
+  );
+}
+
+function ComingSoonBadge({ label }: { label: string }) {
+  return (
+    <span className="ml-2 inline-flex items-center rounded-md bg-[#e1f0e9] px-2 py-1 text-[11px] font-bold uppercase text-[#23624f]">
+      {label}
+    </span>
+  );
+}
+
+function PremiumComingSoonModal({
+  feature,
+  onClose,
+}: {
+  feature: FeatureFlagState;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-[#08110d]/55 px-4"
+      role="dialog"
+    >
+      <section className="w-full max-w-md rounded-lg border border-[#d8ded1] bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+              <Crown size={16} />
+              Tribe Plus
+            </p>
+            <h2 className="mt-1 text-xl font-semibold">{feature.title}</h2>
+          </div>
+          <button
+            aria-label="Close coming soon dialog"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-[#d8ded1] text-[#607265] transition hover:bg-[#f3f8f5]"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-[#34443a]">
+          You&apos;ll soon unlock:
+        </p>
+        <ul className="mt-3 space-y-2 text-sm text-[#34443a]">
+          {feature.bullets.map((item) => (
+            <li className="flex gap-2" key={item}>
+              <Check className="mt-0.5 text-[#23624f]" size={15} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          className="mt-5 flex h-10 w-full items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+          onClick={onClose}
+          type="button"
+        >
+          Coming Soon
+        </button>
+      </section>
+    </div>
   );
 }
 

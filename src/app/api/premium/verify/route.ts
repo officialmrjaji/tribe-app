@@ -2,11 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import {
-  PremiumError,
-  verifyPremiumPurchaseForUser,
-} from "@/lib/premium/service";
-import { PaystackError } from "@/lib/premium/paystack";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { disabledFeatureResponse } from "@/lib/feature-response";
 
 const verifySchema = z.object({
   reference: z.string().min(1),
@@ -23,6 +20,10 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isFeatureEnabled("premium") || !isFeatureEnabled("payments")) {
+      return disabledFeatureResponse("premium");
+    }
+
     const payload = verifySchema.safeParse(await request.json());
 
     if (!payload.success) {
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const { verifyPremiumPurchaseForUser } = await import(
+      "@/lib/premium/service"
+    );
     const result = await verifyPremiumPurchaseForUser({
       ownedProfile: session.ownedProfile,
       reference: payload.data.reference,
@@ -52,10 +56,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
-    if (error instanceof PremiumError || error instanceof PaystackError) {
+    const status = getServiceErrorStatus(error);
+
+    if (status) {
       return NextResponse.json(
-        { error: error.message },
-        { status: error.status },
+        { error: error instanceof Error ? error.message : "Premium error." },
+        { status },
       );
     }
 
@@ -64,4 +70,13 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function getServiceErrorStatus(error: unknown) {
+  return error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof error.status === "number"
+    ? error.status
+    : null;
 }

@@ -10,13 +10,27 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import {
+  getFeatureFlags,
+  type FeatureFlagKey,
+  type FeatureFlagState,
+} from "@/lib/feature-flags";
 import { AccountActions } from "./account-actions";
 
-const settingsSections = [
+type SettingsSection = {
+  body: string;
+  feature?: FeatureFlagKey;
+  href: string;
+  icon: LucideIcon;
+  label: string;
+};
+
+const settingsSections: SettingsSection[] = [
   {
     body: "Name, email, sign-in methods, and profile ownership are managed through your Tribe account.",
     href: "/profile/edit",
@@ -64,14 +78,16 @@ const settingsSections = [
     href: "/ai",
     icon: Sparkles,
     label: "AI Companion",
+    feature: "ai",
   },
   {
     body: "Review Tribe Plus, boosts, usage counters, restore purchases, and subscription status.",
     href: "/premium/manage",
     icon: CreditCard,
     label: "Subscription",
+    feature: "premium",
   },
-] as const;
+];
 
 export default async function SettingsPage() {
   const session = await getCurrentOwnedProfile();
@@ -81,6 +97,7 @@ export default async function SettingsPage() {
   }
 
   const { profile } = session.ownedProfile;
+  const featureFlags = getFeatureFlags();
 
   return (
     <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
@@ -131,16 +148,23 @@ export default async function SettingsPage() {
         <section className="mt-6 grid gap-4 md:grid-cols-2">
           {settingsSections.map((section) => {
             const Icon = section.icon;
+            const feature = section.feature
+              ? featureFlags[section.feature]
+              : undefined;
+            const comingSoon = feature ? !feature.enabled : false;
 
             return (
               <Link
-                className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f] hover:bg-[#fbfaf4]"
+                className={`rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f] hover:bg-[#fbfaf4] ${
+                  comingSoon ? "opacity-75" : ""
+                }`}
                 href={section.href}
                 key={section.label}
               >
                 <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
                   <Icon size={16} />
                   {section.label}
+                  {comingSoon ? <FeatureBadge feature={feature} /> : null}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#34443a]">
                   {section.body}
@@ -151,6 +175,14 @@ export default async function SettingsPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function FeatureBadge({ feature }: { feature?: FeatureFlagState }) {
+  return (
+    <span className="ml-auto rounded-md bg-[#e1f0e9] px-2 py-1 text-[11px] font-bold uppercase text-[#23624f]">
+      {feature?.badgeLabel ?? "Coming Soon"}
+    </span>
   );
 }
 

@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 
 export type HealthComponentStatus = "degraded" | "healthy" | "unhealthy";
 
@@ -22,20 +23,31 @@ export async function getHealthStatus(): Promise<HealthCheckResult> {
     checkVoice(),
   ]);
   const components = {
-    ai: checkEnvironmentPair({
-      label: "AI service",
-      optional: false,
-      variables: ["OPENAI_API_KEY"],
-    }),
+    ai: isFeatureEnabled("ai")
+      ? checkEnvironmentPair({
+          label: "AI service",
+          optional: false,
+          variables: ["OPENAI_API_KEY"],
+        })
+      : {
+          message: "AI Companion is intentionally disabled for private beta.",
+          status: "degraded" as const,
+        },
     authentication: checkEnvironmentPair({
       label: "Authentication",
       variables: ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY"],
     }),
     database,
-    payments: checkEnvironmentPair({
-      label: "Payment",
-      variables: ["NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY", "PAYSTACK_SECRET_KEY"],
-    }),
+    payments:
+      isFeatureEnabled("premium") && isFeatureEnabled("payments")
+        ? checkEnvironmentPair({
+            label: "Payment",
+            variables: ["NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY", "PAYSTACK_SECRET_KEY"],
+          })
+        : {
+            message: "Premium payments are intentionally disabled for private beta.",
+            status: "degraded" as const,
+          },
     storage,
     voice,
   };

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { OwnedProfile } from "@/lib/profile/service";
 import {
   initializePaystackTransaction,
@@ -268,6 +269,8 @@ export async function initializePremiumCheckout({
   ownedProfile: OwnedProfile;
   planCode: string;
 }) {
+  assertPremiumPaymentsEnabled();
+
   const plan = getPlanByCode(planCode);
 
   if (!plan) {
@@ -338,6 +341,8 @@ export async function verifyPremiumPurchaseForUser({
   ownedProfile: OwnedProfile;
   reference: string;
 }) {
+  assertPremiumPaymentsEnabled();
+
   const result = await verifyPremiumPurchaseByReference(reference);
 
   if (result.purchase.user_id !== ownedProfile.account.id) {
@@ -351,6 +356,8 @@ export async function verifyPremiumPurchaseForUser({
 }
 
 export async function verifyPremiumPurchaseByReference(reference: string) {
+  assertPremiumPaymentsEnabled();
+
   if (!reference.trim()) {
     throw new PremiumError("Payment reference is required.", 400);
   }
@@ -399,6 +406,8 @@ export async function verifyPremiumPurchaseByReference(reference: string) {
 }
 
 export async function restorePremiumPurchases(ownedProfile: OwnedProfile) {
+  assertPremiumPaymentsEnabled();
+
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("premium_purchases")
@@ -425,6 +434,15 @@ export async function restorePremiumPurchases(ownedProfile: OwnedProfile) {
     restored: purchases.length,
     status: await getPremiumStatus(ownedProfile),
   };
+}
+
+function assertPremiumPaymentsEnabled() {
+  if (!isFeatureEnabled("premium") || !isFeatureEnabled("payments")) {
+    throw new PremiumError(
+      "Premium memberships are almost here. Purchase actions are paused for private beta.",
+      503,
+    );
+  }
 }
 
 async function fulfillPurchase(purchase: PremiumPurchaseRow, plan: PremiumPlan) {

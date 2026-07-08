@@ -21,6 +21,7 @@ import {
   getPassedDiscoveryProfiles,
   type DiscoveryCollectionProfile,
 } from "@/lib/discovery/service";
+import { getFeatureFlag } from "@/lib/feature-flags";
 import { getPremiumStatus } from "@/lib/premium/service";
 
 const tabs = [
@@ -76,6 +77,8 @@ export default async function ExplorePage({
       getMutualLikedDiscoveryProfiles(session.ownedProfile),
       getPremiumStatus(session.ownedProfile),
     ]);
+  const premiumFeature = getFeatureFlag("premium");
+  const premiumAvailable = premiumFeature.enabled;
 
   if (
     !likedProfiles.completed ||
@@ -85,7 +88,8 @@ export default async function ExplorePage({
     redirect("/onboarding");
   }
 
-  const canSeeWhoLikedMe = premiumStatus.featureGates.seeWhoLikedYou;
+  const canSeeWhoLikedMe =
+    premiumAvailable && premiumStatus.featureGates.seeWhoLikedYou;
   const inboundProfiles = canSeeWhoLikedMe
     ? await getInboundLikedDiscoveryProfiles(session.ownedProfile)
     : null;
@@ -140,7 +144,7 @@ export default async function ExplorePage({
                 href="/premium"
               >
                 <Crown size={16} />
-                Upgrade
+                {premiumAvailable ? "Upgrade" : "Coming Soon"}
               </Link>
             )}
             <Link
@@ -193,7 +197,10 @@ export default async function ExplorePage({
         </section>
 
         {activeTab === "liked-me" && !canSeeWhoLikedMe ? (
-          <LockedWhoLikedMe inboundCount={inboundCount} />
+          <LockedWhoLikedMe
+            inboundCount={inboundCount}
+            premiumAvailable={premiumAvailable}
+          />
         ) : activeProfiles.length === 0 ? (
           <ExploreEmptyState activeTab={activeTab} />
         ) : (
@@ -322,7 +329,13 @@ function ExploreEmptyState({ activeTab }: { activeTab: ExploreTab }) {
   );
 }
 
-function LockedWhoLikedMe({ inboundCount }: { inboundCount: number }) {
+function LockedWhoLikedMe({
+  inboundCount,
+  premiumAvailable,
+}: {
+  inboundCount: number;
+  premiumAvailable: boolean;
+}) {
   return (
     <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
       <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
@@ -336,8 +349,9 @@ function LockedWhoLikedMe({ inboundCount }: { inboundCount: number }) {
               inboundCount === 1 ? "person has" : "people have"
             } liked your profile.`
           : "Inbound likes will appear here when members show interest."}{" "}
-        Upgrade to Tribe Plus to view profiles, compare compatibility, and
-        decide who to like back.
+        {premiumAvailable
+          ? "Upgrade to Tribe Plus to view profiles, compare compatibility, and decide who to like back."
+          : "This feature will be available when Tribe Plus launches."}
       </p>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         <Link
@@ -345,7 +359,7 @@ function LockedWhoLikedMe({ inboundCount }: { inboundCount: number }) {
           href="/premium"
         >
           <Crown size={16} />
-          Upgrade to Premium
+          {premiumAvailable ? "Upgrade to Premium" : "Coming Soon"}
         </Link>
         <Link
           className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"

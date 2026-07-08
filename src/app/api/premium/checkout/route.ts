@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
-import {
-  initializePremiumCheckout,
-  PremiumError,
-} from "@/lib/premium/service";
-import { PaystackError } from "@/lib/premium/paystack";
+import { isFeatureEnabled } from "@/lib/feature-flags";
+import { disabledFeatureResponse } from "@/lib/feature-response";
 
 const checkoutSchema = z.object({
   planCode: z.string().min(1),
@@ -22,6 +19,10 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isFeatureEnabled("premium") || !isFeatureEnabled("payments")) {
+      return disabledFeatureResponse("premium");
+    }
+
     const payload = checkoutSchema.safeParse(await request.json());
 
     if (!payload.success) {
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
     }
 
     const origin = request.headers.get("origin") ?? new URL(request.url).origin;
+    const { initializePremiumCheckout } = await import(
+      "@/lib/premium/service"
+    );
     const checkout = await initializePremiumCheckout({
       origin,
       ownedProfile: session.ownedProfile,
@@ -45,10 +49,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
 
-    if (error instanceof PremiumError || error instanceof PaystackError) {
+    const status = getServiceErrorStatus(error);
+
+    if (status) {
       return NextResponse.json(
-        { error: error.message },
-        { status: error.status },
+        { error: error instanceof Error ? error.message : "Premium error." },
+        { status },
       );
     }
 
@@ -57,4 +63,13 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function getServiceErrorStatus(error: unknown) {
+  return error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof error.status === "number"
+    ? error.status
+    : null;
 }

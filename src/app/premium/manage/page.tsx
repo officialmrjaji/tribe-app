@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import { getFeatureFlag } from "@/lib/feature-flags";
 import {
   formatNaira,
   getPlanByCode,
@@ -26,6 +27,8 @@ export default async function PremiumManagePage() {
   }
 
   const status = await getPremiumStatus(session.ownedProfile);
+  const premiumFeature = getFeatureFlag("premium");
+  const premiumEnabled = premiumFeature.enabled;
   const subscriptionPlan = status.subscription
     ? getPlanByCode(status.subscription.planCode)
     : null;
@@ -54,14 +57,17 @@ export default async function PremiumManagePage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
               Review active Tribe Plus access, boosts, premium gates, and usage
-              counters. Purchases can be restored from the upgrade page.
+              counters.
+              {premiumEnabled
+                ? " Purchases can be restored from the upgrade page."
+                : " Membership actions are paused for private beta."}
             </p>
           </div>
           <Link
             className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
             href="/premium"
           >
-            Upgrade
+            {premiumEnabled ? "Upgrade" : "Coming Soon"}
           </Link>
         </header>
 
@@ -145,11 +151,12 @@ export default async function PremiumManagePage() {
             >
               <p className="flex items-center gap-2 text-sm font-semibold">
                 <RefreshCcw size={16} />
-                Restore purchases
+                {premiumEnabled ? "Restore purchases" : "Purchases coming soon"}
               </p>
               <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                Use the restore button on the upgrade page to re-apply completed
-                payments to your account.
+                {premiumEnabled
+                  ? "Use the restore button on the upgrade page to re-apply completed payments to your account."
+                  : "Restore actions will be available when Tribe Plus launches."}
               </p>
             </Link>
             <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
