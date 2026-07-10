@@ -1,6 +1,7 @@
 import {
   Bell,
   CreditCard,
+  Eye,
   MessageSquareText,
   Mic,
   ShieldCheck,
@@ -39,6 +40,12 @@ const meActions: MeAction[] = [
     href: "/profile/edit",
     icon: UserRound,
     label: "Profile",
+  },
+  {
+    body: "See exactly how your public profile appears to eligible members.",
+    href: "/profile/preview",
+    icon: Eye,
+    label: "Preview profile",
   },
   {
     body: "Use optional coaching for bios, prompts, match explanations, and conversation starters.",

@@ -308,19 +308,28 @@ export default function ProfileEditor({
               stronger recommendations and profile visibility.
             </p>
           </div>
-          <button
-            className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-5 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:bg-[#9ba89f]"
-            disabled={pendingAction === "profile"}
-            onClick={saveProfile}
-            type="button"
-          >
-            {pendingAction === "profile" ? (
-              <LoaderCircle className="animate-spin" size={17} />
-            ) : (
-              <Save size={17} />
-            )}
-            Save profile
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link
+              className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+              href="/profile/preview"
+            >
+              <Eye size={17} />
+              Preview profile
+            </Link>
+            <button
+              className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-5 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:bg-[#9ba89f]"
+              disabled={pendingAction === "profile"}
+              onClick={saveProfile}
+              type="button"
+            >
+              {pendingAction === "profile" ? (
+                <LoaderCircle className="animate-spin" size={17} />
+              ) : (
+                <Save size={17} />
+              )}
+              Save profile
+            </button>
+          </div>
         </header>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">

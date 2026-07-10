@@ -202,8 +202,17 @@ export default function NotificationsPage() {
                 key={notification.id}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <Link className="min-w-0 flex-1" href={notification.href}>
-                    <p className="text-sm font-semibold text-[#607265]">
+                  <Link
+                    className="min-w-0 flex-1"
+                    href={notification.href}
+                    onClick={() => {
+                      void markRead(notification);
+                    }}
+                  >
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#607265]">
+                      <span className="rounded-md bg-[#eef4eb] px-2 py-1 text-xs font-bold uppercase text-[#34443a]">
+                        {getNotificationCategory(notification.type)}
+                      </span>
                       {notification.title}
                     </p>
                     <h2 className="mt-1 text-lg font-semibold">
@@ -285,6 +294,34 @@ function NotificationsEmptyState() {
       </Link>
     </section>
   );
+}
+
+function getNotificationCategory(type: NotificationRecord["type"]) {
+  if (type === "profile_saved") {
+    return "Like";
+  }
+
+  if (type === "mutual_save" || type === "conversation_created") {
+    return "Match";
+  }
+
+  if (type === "new_message") {
+    return "Message";
+  }
+
+  if (type === "square_comment") {
+    return "Comment";
+  }
+
+  if (type === "square_reply") {
+    return "Reply";
+  }
+
+  if (type === "square_mention") {
+    return "Mention";
+  }
+
+  return "Square";
 }
 
 function formatDate(value: string) {

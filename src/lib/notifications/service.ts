@@ -5,14 +5,25 @@ export type NotificationType =
   | "conversation_created"
   | "mutual_save"
   | "new_message"
-  | "profile_saved";
+  | "profile_saved"
+  | "square_comment"
+  | "square_like"
+  | "square_mention"
+  | "square_reply"
+  | "square_repost";
 
 export type NotificationRecord = {
   actorName: string | null;
   createdAt: string;
   data: Record<string, unknown>;
   entityId: string | null;
-  entityType: "conversation" | "match" | "message" | "profile";
+  entityType:
+    | "conversation"
+    | "match"
+    | "message"
+    | "profile"
+    | "square_comment"
+    | "square_post";
   href: string;
   id: string;
   isRead: boolean;
@@ -26,7 +37,7 @@ type NotificationRow = {
   created_at: string;
   data: Record<string, unknown>;
   entity_id: string | null;
-  entity_type: "conversation" | "match" | "message" | "profile";
+  entity_type: NotificationRecord["entityType"];
   id: string;
   read_at: string | null;
   recipient_user_id: string;
@@ -209,6 +220,11 @@ function formatNotification(
   const displayName = actorName ?? "Someone";
   const conversationId = stringFromData(row.data, "conversationId");
   const profileId = stringFromData(row.data, "profileId");
+  const postId = stringFromData(row.data, "postId");
+  const commentId = stringFromData(row.data, "commentId");
+  const squareHref = postId
+    ? `/square/posts/${postId}${commentId ? `#comment-${commentId}` : ""}`
+    : "/square";
 
   if (row.type === "new_message") {
     return {
@@ -222,7 +238,11 @@ function formatNotification(
   if (row.type === "mutual_save") {
     return {
       ...baseNotification(row, actorName),
-      href: profileId ? "/explore?tab=matches" : "/explore?tab=matches",
+      href: conversationId
+        ? `/messages/${conversationId}`
+        : profileId
+          ? "/explore?tab=matches"
+          : "/explore?tab=matches",
       message: `You and ${displayName} liked each other. Messaging is now available.`,
       title: "Mutual like",
     };
@@ -234,6 +254,51 @@ function formatNotification(
       href: "/explore?tab=liked-me",
       message: `${displayName} liked your profile.`,
       title: "Profile liked",
+    };
+  }
+
+  if (row.type === "square_comment") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} commented on your Square post.`,
+      title: "Comment",
+    };
+  }
+
+  if (row.type === "square_reply") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} replied to your Square comment.`,
+      title: "Reply",
+    };
+  }
+
+  if (row.type === "square_mention") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} mentioned you in Square.`,
+      title: "Mention",
+    };
+  }
+
+  if (row.type === "square_like") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} liked your Square post.`,
+      title: "Square activity",
+    };
+  }
+
+  if (row.type === "square_repost") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} reposted your Square post.`,
+      title: "Square activity",
     };
   }
 

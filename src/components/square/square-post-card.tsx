@@ -20,6 +20,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useMemo, useRef, useState } from "react";
+import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import type { SquareComment, SquarePost } from "@/lib/square/service";
 import { squarePostTypeLabels } from "@/lib/square/schema";
 
@@ -66,6 +67,7 @@ export function SquarePostCard({
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const commentTree = useMemo(() => buildCommentTree(comments), [comments]);
+  const previewComments = commentTree.slice(0, 2);
 
   function openCommentComposer() {
     setShowComposer(true);
@@ -818,13 +820,18 @@ export function SquarePostCard({
               </p>
             ) : null}
             {currentPost.imageUrl ? (
-              <Image
-                alt={currentPost.caption ?? "Square photo"}
-                className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
-                height={520}
-                src={currentPost.imageUrl}
-                width={900}
-              />
+              <ProfilePhotoGallery
+                label="Open Square photo"
+                photos={[currentPost.imageUrl]}
+              >
+                <Image
+                  alt={currentPost.caption ?? "Square photo"}
+                  className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
+                  height={520}
+                  src={currentPost.imageUrl}
+                  width={900}
+                />
+              </ProfilePhotoGallery>
             ) : null}
           </div>
         )}
@@ -881,23 +888,38 @@ export function SquarePostCard({
           <ActionButton
             active={currentPost.isLiked}
             busy={pendingAction === `like:${currentPost.id}`}
+            compact={!expanded}
             icon={Heart}
             label={`${currentPost.likeCount} Like${
               currentPost.likeCount === 1 ? "" : "s"
             }`}
             onClick={likePost}
           />
-          <ActionButton
-            active={showComposer}
-            icon={MessageCircle}
-            label={`${currentPost.commentCount} Comment${
-              currentPost.commentCount === 1 ? "" : "s"
-            }`}
-            onClick={openCommentComposer}
-          />
+          {expanded ? (
+            <ActionButton
+              active={showComposer}
+              icon={MessageCircle}
+              label={`${currentPost.commentCount} Comment${
+                currentPost.commentCount === 1 ? "" : "s"
+              }`}
+              onClick={openCommentComposer}
+            />
+          ) : (
+            <Link
+              aria-label={`${currentPost.commentCount} comment${
+                currentPost.commentCount === 1 ? "" : "s"
+              }. Open discussion.`}
+              className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-[#c9ddd3] bg-white px-3 text-sm font-semibold text-[#34443a] transition duration-150 hover:bg-[#eef7f1]"
+              href={`/square/posts/${currentPost.id}`}
+            >
+              <MessageCircle size={16} />
+              <span aria-hidden="true">{currentPost.commentCount}</span>
+            </Link>
+          )}
           <ActionButton
             active={currentPost.isReposted}
             busy={pendingAction === `repost:${currentPost.id}`}
+            compact={!expanded}
             disabled={
               currentPost.isReposted ||
               currentPost.isMine ||
@@ -907,10 +929,44 @@ export function SquarePostCard({
             label={`${currentPost.repostCount} Repost`}
             onClick={repostPost}
           />
+          {!expanded ? (
+            <Link
+              className="ml-auto inline-flex min-h-9 items-center justify-center rounded-md px-2 text-sm font-semibold text-[#176b57] transition hover:bg-[#eef7f1]"
+              href={`/square/posts/${currentPost.id}`}
+            >
+              Open discussion
+            </Link>
+          ) : null}
         </div>
       </div>
 
-      {(showComposer || comments.length > 0) ? (
+      {!expanded && previewComments.length > 0 ? (
+        <section className="border-t border-[#dcebe4] bg-[#f8fcf9] px-4 py-3">
+          <Link
+            className="block space-y-2 rounded-md border border-[#dcebe4] bg-white px-3 py-2 transition hover:border-[#9cc7b7]"
+            href={`/square/posts/${currentPost.id}`}
+          >
+            {previewComments.map((comment) => (
+              <p
+                className="line-clamp-2 text-sm leading-6 text-[#34443a]"
+                key={comment.id}
+              >
+                <span className="font-semibold text-[#17201b]">
+                  {comment.author.name}:{" "}
+                </span>
+                {comment.body}
+              </p>
+            ))}
+            {currentPost.commentCount > previewComments.length ? (
+              <p className="text-xs font-semibold uppercase text-[#477060]">
+                View all {currentPost.commentCount} comments
+              </p>
+            ) : null}
+          </Link>
+        </section>
+      ) : null}
+
+      {expanded && (showComposer || comments.length > 0) ? (
         <section className="border-t border-[#dcebe4] bg-[#f8fcf9] px-4 py-3">
           {showComposer ? (
             <form
@@ -1040,6 +1096,7 @@ function CommentItem({
         "rounded-md bg-white px-3 py-3 shadow-sm",
         depth > 0 && "border-l-2 border-[#9cc7b7]",
       )}
+      id={`comment-${comment.id}`}
       style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 14 : 0 }}
     >
       <div className="flex items-start gap-3">
@@ -1300,6 +1357,7 @@ function MoreMenu({
 function ActionButton({
   active = false,
   busy = false,
+  compact = false,
   disabled = false,
   icon: Icon,
   label,
@@ -1308,6 +1366,7 @@ function ActionButton({
 }: {
   active?: boolean;
   busy?: boolean;
+  compact?: boolean;
   disabled?: boolean;
   icon: LucideIcon;
   label: string;
@@ -1333,7 +1392,14 @@ function ActionButton({
       ) : (
         <Icon size={16} />
       )}
-      {label}
+      {compact ? (
+        <>
+          <span aria-hidden="true">{label.split(" ")[0]}</span>
+          <span className="sr-only">{label}</span>
+        </>
+      ) : (
+        label
+      )}
     </button>
   );
 }

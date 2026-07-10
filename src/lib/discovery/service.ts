@@ -14,6 +14,7 @@ import {
   type OnboardingRecord,
 } from "@/lib/onboarding/service";
 import { trackAnalyticsEvent } from "@/lib/analytics/service";
+import { createConversation } from "@/lib/messaging/service";
 import { createNotification } from "@/lib/notifications/service";
 import {
   assertOwnedProfileHasMinimumPhotos,
@@ -557,9 +558,15 @@ export async function saveDiscoveryProfile(
     .eq("viewer_user_id", ownedProfile.account.id)
     .eq("passed_user_id", target.user_id);
 
-  await createProfileSaveNotifications(ownedProfile, target);
+  const matchResult = await createProfileSaveNotifications(ownedProfile, target);
 
-  return { liked: true, profileId: target.id, saved: true };
+  return {
+    conversationId: matchResult.conversationId,
+    liked: true,
+    matched: matchResult.matched,
+    profileId: target.id,
+    saved: true,
+  };
 }
 
 export async function passDiscoveryProfile(
@@ -1160,10 +1167,12 @@ async function createProfileSaveNotifications(
   }
 
   if (!reciprocalSave) {
-    return;
+    return { conversationId: null, matched: false };
   }
 
   const pairKey = [ownedProfile.account.id, target.user_id].sort().join(":");
+  const conversationResult = await createConversation(ownedProfile, target.id);
+  const conversationId = conversationResult.conversation.id;
 
   await Promise.all([
     trackAnalyticsEvent({
@@ -1177,10 +1186,11 @@ async function createProfileSaveNotifications(
     createNotification({
       actorUserId: target.user_id,
       data: {
+        conversationId,
         profileId: target.id,
       },
       dedupeKey: `mutual_save:${pairKey}:${ownedProfile.account.id}`,
-      entityId: target.id,
+      entityId: conversationId,
       entityType: "match",
       recipientUserId: ownedProfile.account.id,
       type: "mutual_save",
@@ -1188,15 +1198,18 @@ async function createProfileSaveNotifications(
     createNotification({
       actorUserId: ownedProfile.account.id,
       data: {
+        conversationId,
         profileId: ownedProfile.profile.id,
       },
       dedupeKey: `mutual_save:${pairKey}:${target.user_id}`,
-      entityId: ownedProfile.profile.id,
+      entityId: conversationId,
       entityType: "match",
       recipientUserId: target.user_id,
       type: "mutual_save",
     }),
   ]);
+
+  return { conversationId, matched: true };
 }
 
 function buildRecommendation({

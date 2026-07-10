@@ -61,10 +61,12 @@ const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
 
 type ApiErrorPayload = {
+  conversationId?: string | null;
   error?: string;
   issues?: Array<{
     message?: string;
   }>;
+  matched?: boolean;
 };
 
 function getActionFailureMessage(payload: unknown, fallback: string) {
@@ -218,7 +220,9 @@ export default function Home() {
         ),
       );
       setActionMessage(
-        `${savedProfile?.name ?? "Profile"} was added to liked profiles.`,
+        payload?.matched
+          ? `You and ${savedProfile?.name ?? "this member"} liked each other. The chat is ready.`
+          : `${savedProfile?.name ?? "Profile"} was added to liked profiles.`,
       );
     } catch (error) {
       setActionError(
@@ -534,10 +538,10 @@ export default function Home() {
                         >
                           <Image
                             alt={`${profile.name} avatar`}
-                            className="h-16 w-16 shrink-0 rounded-md object-cover"
-                            height={64}
+                            className="h-20 w-20 shrink-0 rounded-md object-cover"
+                            height={80}
                             src={profile.image}
-                            width={64}
+                            width={80}
                           />
                         </ProfilePhotoGallery>
                         <div className="min-w-0 flex-1">
@@ -585,32 +589,13 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <p className="mt-4 min-h-12 text-sm leading-6 text-[#4e5e54]">
+                      <p className="mt-4 text-sm leading-6 text-[#4e5e54]">
                         {profile.signal}
                       </p>
 
-                      <div className="mt-3 grid gap-2 text-xs font-semibold text-[#34443a]">
-                        <p>
-                          <span className="text-[#607265]">Shared interests:</span>{" "}
-                          {profile.sharedInterests.length
-                            ? profile.sharedInterests.slice(0, 3).join(", ")
-                            : "Still discovering overlap"}
-                        </p>
-                        <p>
-                          <span className="text-[#607265]">Shared goals:</span>{" "}
-                          {profile.sharedGoals.slice(0, 2).join(", ")}
-                        </p>
-                        {profile.languages.length ? (
-                          <p>
-                            <span className="text-[#607265]">Languages:</span>{" "}
-                            {profile.languages.join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-semibold uppercase text-[#607265]">
-                          Why this match
+                          Why you may connect
                         </p>
                         {profile.reasons.slice(0, 2).map((reason) => (
                           <p
@@ -626,16 +611,6 @@ export default function Home() {
                         ))}
                       </div>
 
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {profile.traits.map((trait) => (
-                          <span
-                            key={trait}
-                            className="rounded-md border border-[#d8ded1] bg-[#f6f7f1] px-2.5 py-1 text-xs font-semibold text-[#34443a]"
-                          >
-                            {trait}
-                          </span>
-                        ))}
-                      </div>
                     </div>
 
                     <div className="mt-4 flex items-center gap-2 border-t border-[#e2e6dc] pt-3">
@@ -665,7 +640,7 @@ export default function Home() {
                         aria-label={`View ${profile.name}`}
                       >
                         <Eye size={18} />
-                        View
+                        View profile
                       </Link>
                       <button
                         className="flex h-10 w-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"

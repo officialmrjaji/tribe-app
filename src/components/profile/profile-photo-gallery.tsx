@@ -9,7 +9,13 @@ import {
   ZoomOut,
 } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 type ProfilePhotoGalleryProps = {
   children: ReactNode;
@@ -45,24 +51,24 @@ export function ProfilePhotoGallery({
     setIsOpen(true);
   }
 
-  function closeGallery() {
+  const closeGallery = useCallback(() => {
     setIsOpen(false);
     setIsZoomed(false);
-  }
+  }, []);
 
-  function goToNext() {
+  const goToNext = useCallback(() => {
     setIsZoomed(false);
     setActiveIndex((currentIndex) =>
       currentIndex + 1 >= visiblePhotos.length ? 0 : currentIndex + 1,
     );
-  }
+  }, [visiblePhotos.length]);
 
-  function goToPrevious() {
+  const goToPrevious = useCallback(() => {
     setIsZoomed(false);
     setActiveIndex((currentIndex) =>
       currentIndex - 1 < 0 ? visiblePhotos.length - 1 : currentIndex - 1,
     );
-  }
+  }, [visiblePhotos.length]);
 
   function handleTouchEnd(touchEndX: number) {
     if (touchStartX === null) {
@@ -81,6 +87,30 @@ export function ProfilePhotoGallery({
 
     setTouchStartX(null);
   }
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeGallery();
+      }
+
+      if (event.key === "ArrowRight" && visiblePhotos.length > 1) {
+        goToNext();
+      }
+
+      if (event.key === "ArrowLeft" && visiblePhotos.length > 1) {
+        goToPrevious();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeGallery, goToNext, goToPrevious, isOpen, visiblePhotos.length]);
 
   return (
     <>
