@@ -7,6 +7,7 @@ import {
   Heart,
   LoaderCircle,
   MessageCircle,
+  MoreVertical,
   Repeat2,
   Send,
   ShieldCheck,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import type { SquareComment, SquarePost } from "@/lib/square/service";
 import { squarePostTypeLabels } from "@/lib/square/schema";
 
@@ -62,8 +63,14 @@ export function SquarePostCard({
   const [showComposer, setShowComposer] = useState(expanded);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const commentTree = useMemo(() => buildCommentTree(comments), [comments]);
+
+  function openCommentComposer() {
+    setShowComposer(true);
+    window.requestAnimationFrame(() => commentInputRef.current?.focus());
+  }
 
   async function likePost() {
     const nextLiked = !currentPost.isLiked;
@@ -310,6 +317,54 @@ export function SquarePostCard({
     } catch (muteError) {
       setError(
         muteError instanceof Error ? muteError.message : "Member could not be hidden.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function blockAuthor() {
+    if (!currentPost.author.profileId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Block this member? You will no longer be able to interact with each other.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `block:${currentPost.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/profile/block", {
+        body: JSON.stringify({
+          profileId: currentPost.author.profileId,
+          reason: "Square safety action",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be blocked."),
+        );
+      }
+
+      onDeleted?.(currentPost.id);
+      setNotice("Member blocked successfully.");
+    } catch (blockError) {
+      setError(
+        blockError instanceof Error
+          ? blockError.message
+          : "Member could not be blocked.",
       );
     } finally {
       setPendingAction("");
@@ -632,7 +687,7 @@ export function SquarePostCard({
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 {currentPost.author.profileHref ? (
                   <Link
@@ -652,16 +707,57 @@ export function SquarePostCard({
                   {currentPost.editedAt ? " / Edited" : ""}
                 </p>
               </div>
-              <span
-                className={cx(
-                  "rounded-md px-2 py-1 text-xs font-bold",
-                  currentPost.isAnonymous
-                    ? "bg-[#fff4d8] text-[#75520d]"
-                    : "bg-[#e4f4ec] text-[#176b57]",
-                )}
-              >
-                {currentPost.isAnonymous ? "Anonymous" : currentPost.city}
-              </span>
+              <div className="flex items-center gap-1">
+                <span
+                  className={cx(
+                    "rounded-md px-2 py-1 text-xs font-bold",
+                    currentPost.isAnonymous
+                      ? "bg-[#fff4d8] text-[#75520d]"
+                      : "bg-[#e4f4ec] text-[#176b57]",
+                  )}
+                >
+                  {currentPost.isAnonymous ? "Anonymous" : currentPost.city}
+                </span>
+                <MoreMenu
+                  items={
+                    currentPost.isMine
+                      ? [
+                          {
+                            icon: Edit3,
+                            label: "Edit post",
+                            onClick: () => setEditingPost(true),
+                          },
+                          {
+                            danger: true,
+                            icon: Trash2,
+                            label: "Delete post",
+                            onClick: deletePost,
+                          },
+                        ]
+                      : [
+                          {
+                            icon: Flag,
+                            label: "Report post",
+                            onClick: reportPost,
+                          },
+                          {
+                            disabled: !currentPost.author.userId,
+                            icon: UserX,
+                            label: "Hide member",
+                            onClick: hideAuthor,
+                          },
+                          {
+                            danger: true,
+                            disabled: !currentPost.author.profileId,
+                            icon: ShieldCheck,
+                            label: "Block member",
+                            onClick: blockAuthor,
+                          },
+                        ]
+                  }
+                  label="More post actions"
+                />
+              </div>
             </div>
 
             {currentPost.author.verification ? (
@@ -797,7 +893,7 @@ export function SquarePostCard({
             label={`${currentPost.commentCount} Comment${
               currentPost.commentCount === 1 ? "" : "s"
             }`}
-            onClick={() => setShowComposer((value) => !value)}
+            onClick={openCommentComposer}
           />
           <ActionButton
             active={currentPost.isReposted}
@@ -811,39 +907,6 @@ export function SquarePostCard({
             label={`${currentPost.repostCount} Repost`}
             onClick={repostPost}
           />
-          {currentPost.isMine ? (
-            <>
-              <ActionButton
-                active={editingPost}
-                icon={Edit3}
-                label="Edit"
-                onClick={() => setEditingPost(true)}
-              />
-              <ActionButton
-                busy={pendingAction === `delete:${currentPost.id}`}
-                icon={Trash2}
-                label="Delete"
-                onClick={deletePost}
-                tone="danger"
-              />
-            </>
-          ) : (
-            <>
-              <ActionButton
-                busy={pendingAction === `report:${currentPost.id}`}
-                icon={Flag}
-                label="Report"
-                onClick={reportPost}
-              />
-              <ActionButton
-                busy={pendingAction === `mute:${currentPost.id}`}
-                disabled={!currentPost.author.userId}
-                icon={UserX}
-                label="Hide"
-                onClick={hideAuthor}
-              />
-            </>
-          )}
         </div>
       </div>
 
@@ -866,6 +929,7 @@ export function SquarePostCard({
                 maxLength={1000}
                 onChange={(event) => setCommentDraft(event.target.value)}
                 placeholder="Add a thoughtful comment. Use @name to mention someone."
+                ref={commentInputRef}
                 value={commentDraft}
               />
               <button
@@ -993,23 +1057,54 @@ function CommentItem({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {comment.author.profileHref ? (
-              <Link
-                className="text-sm font-semibold text-[#17201b] transition hover:text-[#477060]"
-                href={comment.author.profileHref}
-              >
-                {comment.author.name}
-              </Link>
-            ) : (
-              <p className="text-sm font-semibold text-[#17201b]">
-                {comment.author.name}
-              </p>
-            )}
-            <span className="text-xs font-semibold uppercase text-[#477060]">
-              {formatDate(comment.createdAt)}
-              {comment.editedAt ? " / Edited" : ""}
-            </span>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {comment.author.profileHref ? (
+                <Link
+                  className="text-sm font-semibold text-[#17201b] transition hover:text-[#477060]"
+                  href={comment.author.profileHref}
+                >
+                  {comment.author.name}
+                </Link>
+              ) : (
+                <p className="text-sm font-semibold text-[#17201b]">
+                  {comment.author.name}
+                </p>
+              )}
+              <span className="text-xs font-semibold uppercase text-[#477060]">
+                {formatDate(comment.createdAt)}
+                {comment.editedAt ? " / Edited" : ""}
+              </span>
+            </div>
+            <MoreMenu
+              items={
+                comment.isMine
+                  ? [
+                      {
+                        icon: Edit3,
+                        label: "Edit comment",
+                        onClick: () => {
+                          setEditingCommentId(comment.id);
+                          setEditingCommentBody(comment.body);
+                        },
+                      },
+                      {
+                        danger: true,
+                        icon: Trash2,
+                        label: "Delete comment",
+                        onClick: () => deleteComment(comment),
+                      },
+                    ]
+                  : [
+                      {
+                        icon: Flag,
+                        label: "Report comment",
+                        onClick: () => reportComment(comment),
+                      },
+                    ]
+              }
+              label="More comment actions"
+            />
           </div>
 
           {isEditing ? (
@@ -1073,33 +1168,6 @@ function CommentItem({
                 setReplyingToCommentId(isReplying ? "" : comment.id)
               }
             />
-            {comment.isMine ? (
-              <>
-                <MiniActionButton
-                  active={isEditing}
-                  icon={Edit3}
-                  label="Edit"
-                  onClick={() => {
-                    setEditingCommentId(comment.id);
-                    setEditingCommentBody(comment.body);
-                  }}
-                />
-                <MiniActionButton
-                  busy={pendingAction === `comment-delete:${comment.id}`}
-                  icon={Trash2}
-                  label="Delete"
-                  onClick={() => deleteComment(comment)}
-                  tone="danger"
-                />
-              </>
-            ) : (
-              <MiniActionButton
-                busy={pendingAction === `comment-report:${comment.id}`}
-                icon={Flag}
-                label="Report"
-                onClick={() => reportComment(comment)}
-              />
-            )}
           </div>
 
           {isReplying ? (
@@ -1167,6 +1235,64 @@ function CommentItem({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function MoreMenu({
+  items,
+  label,
+}: {
+  items: Array<{
+    danger?: boolean;
+    disabled?: boolean;
+    icon: LucideIcon;
+    label: string;
+    onClick: () => void;
+  }>;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        aria-label={label}
+        className="flex h-8 w-8 items-center justify-center rounded-md text-[#477060] transition hover:bg-[#eef7f1] hover:text-[#17251f]"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <MoreVertical size={17} />
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-9 z-20 min-w-44 rounded-md border border-[#c9ddd3] bg-white p-1 shadow-lg">
+          {items.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <button
+                className={cx(
+                  "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
+                  item.danger
+                    ? "text-[#8a3325] hover:bg-[#fff5f1]"
+                    : "text-[#34443a] hover:bg-[#eef7f1]",
+                )}
+                disabled={item.disabled}
+                key={item.label}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+                type="button"
+              >
+                <Icon size={15} />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -11,15 +11,18 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { ProfilePhotoManager } from "@/components/profile/profile-photo-manager";
 import {
   availabilityOptions,
   conversationStyleOptions,
+  genderOptions,
   intentOptions,
   interestOptions,
   lifestyleSignalOptions,
   personalityTypeOptions,
   type Availability,
   type ConversationStyle,
+  type Gender,
   type Intent,
   type Interest,
   type LifestyleSignal,
@@ -29,10 +32,12 @@ import type {
   OnboardingInput,
 } from "@/lib/onboarding/schema";
 import type { OnboardingSnapshot } from "@/lib/onboarding/service";
+import type { ProfileQualitySnapshot } from "@/lib/profile/service";
 
 type OnboardingDraft = {
   availability: Availability | "";
   conversationStyle: ConversationStyle | "";
+  gender: Gender | "";
   intent: Intent | "";
   interests: Interest[];
   lifestyleSignals: LifestyleSignal[];
@@ -40,11 +45,20 @@ type OnboardingDraft = {
   primaryGoal: string;
 };
 
-const steps = ["Purpose", "Signals", "Interests", "Rhythm"] as const;
+type CompleteOnboardingDraft = OnboardingDraft & {
+  availability: Availability;
+  conversationStyle: ConversationStyle;
+  gender: Gender;
+  intent: Intent;
+  personalityType: PersonalityType;
+};
+
+const steps = ["Purpose", "Signals", "Interests", "Rhythm", "Photos"] as const;
 
 const defaultDraft: OnboardingDraft = {
   availability: "",
   conversationStyle: "",
+  gender: "",
   intent: "",
   interests: [],
   lifestyleSignals: [],
@@ -57,9 +71,11 @@ const cx = (...classes: Array<string | false | null | undefined>) =>
 
 export default function OnboardingFlow({
   displayName,
+  initialQuality,
   initialResponse,
 }: {
   displayName: string;
+  initialQuality: ProfileQualitySnapshot;
   initialResponse: OnboardingSnapshot | null;
 }) {
   const router = useRouter();
@@ -68,13 +84,14 @@ export default function OnboardingFlow({
     ...defaultDraft,
     ...(initialResponse ?? {}),
   }));
+  const [quality, setQuality] = useState(initialQuality);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
   const currentStep = steps[stepIndex];
   const canContinue = useMemo(
-    () => isStepComplete(stepIndex, draft),
-    [draft, stepIndex],
+    () => isStepComplete(stepIndex, draft, quality.hasMinimumPhotos),
+    [draft, quality.hasMinimumPhotos, stepIndex],
   );
   const progress = Math.round(((stepIndex + 1) / steps.length) * 100);
 
@@ -111,6 +128,7 @@ export default function OnboardingFlow({
     const payload: OnboardingInput = {
       availability: draft.availability,
       conversationStyle: draft.conversationStyle,
+      gender: draft.gender,
       intent: draft.intent,
       interests: draft.interests,
       lifestyleSignals: draft.lifestyleSignals,
@@ -187,7 +205,9 @@ export default function OnboardingFlow({
                 type="button"
               >
                 <span>{step}</span>
-                {isStepComplete(index, draft) ? <Check size={16} /> : null}
+                {isStepComplete(index, draft, quality.hasMinimumPhotos) ? (
+                  <Check size={16} />
+                ) : null}
               </button>
             ))}
           </nav>
@@ -220,6 +240,9 @@ export default function OnboardingFlow({
               ) : null}
               {stepIndex === 3 ? (
                 <RhythmStep draft={draft} updateDraft={updateDraft} />
+              ) : null}
+              {stepIndex === 4 ? (
+                <PhotosStep quality={quality} setQuality={setQuality} />
               ) : null}
             </div>
 
@@ -325,6 +348,22 @@ function SignalsStep({
 }) {
   return (
     <div className="space-y-6">
+      <OptionGroup title="Gender">
+        {genderOptions.map((option) => (
+          <ChoiceButton
+            active={draft.gender === option.value}
+            icon={<UserRound size={17} />}
+            key={option.value}
+            label={option.label}
+            onClick={() => updateDraft({ gender: option.value })}
+          />
+        ))}
+      </OptionGroup>
+      <p className="-mt-3 text-sm leading-6 text-[#607265]">
+        This is stored privately as a future matching and filtering foundation.
+        It is not used as a public profile headline.
+      </p>
+
       <OptionGroup title="Personality type">
         {personalityTypeOptions.map((option) => (
           <ChoiceButton
@@ -351,6 +390,29 @@ function SignalsStep({
         ))}
       </OptionGroup>
     </div>
+  );
+}
+
+function PhotosStep({
+  quality,
+  setQuality,
+}: {
+  quality: ProfileQualitySnapshot;
+  setQuality: (quality: ProfileQualitySnapshot) => void;
+}) {
+  return (
+    <section>
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-[#17201b]">
+          Add your profile photos
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-[#607265]">
+          Upload at least three real photos to keep People trustworthy. Select
+          several at once, then arrange the photo you want people to see first.
+        </p>
+      </div>
+      <ProfilePhotoManager onQualityChange={setQuality} quality={quality} />
+    </section>
   );
 }
 
@@ -467,14 +529,20 @@ function toggleValue<T extends string>(values: T[], value: T) {
     : [...values, value];
 }
 
-function isStepComplete(stepIndex: number, draft: OnboardingDraft) {
+function isStepComplete(
+  stepIndex: number,
+  draft: OnboardingDraft,
+  hasMinimumPhotos: boolean,
+) {
   if (stepIndex === 0) {
     return draft.primaryGoal.trim().length >= 8 && Boolean(draft.intent);
   }
 
   if (stepIndex === 1) {
     return (
-      Boolean(draft.personalityType) && draft.lifestyleSignals.length >= 2
+      Boolean(draft.gender) &&
+      Boolean(draft.personalityType) &&
+      draft.lifestyleSignals.length >= 2
     );
   }
 
@@ -482,11 +550,17 @@ function isStepComplete(stepIndex: number, draft: OnboardingDraft) {
     return draft.interests.length >= 3;
   }
 
-  return Boolean(draft.conversationStyle) && Boolean(draft.availability);
+  if (stepIndex === 3) {
+    return Boolean(draft.conversationStyle) && Boolean(draft.availability);
+  }
+
+  return hasMinimumPhotos;
 }
 
 function isCompleteDraft(
   draft: OnboardingDraft,
-): draft is OnboardingInput {
-  return steps.every((_, index) => isStepComplete(index, draft));
+): draft is CompleteOnboardingDraft {
+  return steps
+    .slice(0, 4)
+    .every((_, index) => isStepComplete(index, draft, true));
 }

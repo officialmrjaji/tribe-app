@@ -6,6 +6,7 @@ import {
   ensureOwnedProfile,
   getPrimaryEmail,
   getPrimaryEmailVerified,
+  getProfileQuality,
 } from "@/lib/profile/service";
 import OnboardingFlow from "./onboarding-flow";
 
@@ -39,9 +40,12 @@ export default async function OnboardingPage() {
     redirect("/beta");
   }
 
+  const quality = await getProfileQuality(ownedProfile);
+
   return (
     <OnboardingFlow
       displayName={ownedProfile.profile.display_name ?? user.firstName ?? "there"}
+      initialQuality={quality}
       initialResponse={onboarding.response}
     />
   );

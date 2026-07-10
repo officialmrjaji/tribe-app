@@ -2,7 +2,8 @@
 
 import { ArrowLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type {
   SquareFeedResult,
   SquareTopic,
@@ -28,6 +29,32 @@ export function SquareFeed({
     () => feed.topics.find((topic) => topic.slug === activeTopicSlug) ?? null,
     [activeTopicSlug, feed.topics],
   );
+
+  const refreshPosts = useCallback(async () => {
+    try {
+      const query = activeTopicSlug
+        ? `?topic=${encodeURIComponent(activeTopicSlug)}`
+        : "";
+      const response = await fetch(`/api/square/feed${query}`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | SquareFeedResult
+        | null;
+
+      if (response.ok && payload) {
+        setPosts(payload.posts);
+      }
+    } catch {
+      // Keep the current feed; the interval fallback will retry.
+    }
+  }, [activeTopicSlug]);
+
+  useRealtimeInvalidation({
+    events: ["square"],
+    onInvalidate: refreshPosts,
+  });
 
   function removePost(postId: string) {
     setPosts((currentPosts) =>
@@ -96,7 +123,7 @@ export function SquareFeed({
               <section className="space-y-3">
                 {posts.map((post) => (
                   <SquarePostCard
-                    key={post.id}
+                    key={`${post.id}:${post.editedAt}:${post.likeCount}:${post.commentCount}:${post.repostCount}`}
                     onDeleted={removePost}
                     post={post}
                   />

@@ -2,8 +2,9 @@
 
 import { ArrowLeft, Bell, Check, LoaderCircle } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { NotificationRecord } from "@/lib/notifications/service";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type NotificationsPayload = {
   error?: string;
@@ -23,46 +24,45 @@ export default function NotificationsPage() {
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | NotificationsPayload
+        | null;
 
-    async function loadNotifications() {
-      try {
-        const response = await fetch("/api/notifications", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | NotificationsPayload
-          | null;
-
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Unable to load notifications.");
-        }
-
-        if (isMounted) {
-          setNotifications(payload?.notifications ?? []);
-          setUnreadCount(payload?.unreadCount ?? 0);
-          setStatus("ready");
-        }
-      } catch (loadError) {
-        if (isMounted) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Unable to load notifications.",
-          );
-          setStatus("error");
-        }
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to load notifications.");
       }
+
+      setNotifications(payload?.notifications ?? []);
+      setUnreadCount(payload?.unreadCount ?? 0);
+      setStatus("ready");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load notifications.",
+      );
+      setStatus("error");
     }
-
-    loadNotifications();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadNotifications();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadNotifications]);
+
+  useRealtimeInvalidation({
+    events: ["notifications"],
+    onInvalidate: loadNotifications,
+  });
 
   async function markRead(notification: NotificationRecord) {
     if (notification.isRead) {

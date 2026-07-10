@@ -20,6 +20,7 @@ import {
   assertProfileHasMinimumPhotos,
   getProfileVerification,
   isRealProfilePhoto,
+  minimumBasicProfileCompletion,
   minimumDiscoveryPhotoCount,
   type ProfileVerification,
   type OwnedProfile,
@@ -237,7 +238,7 @@ export async function getDiscoveryRecommendations(
       !passedProfileIds.has(profile.id) &&
       !blockedUserIds.has(profile.user_id) &&
       profile.onboarding_completed_at &&
-      profile.profile_completion_score >= 80 &&
+      profile.profile_completion_score >= minimumBasicProfileCompletion &&
       (profile.photo_urls?.length ?? 0) >= minimumDiscoveryPhotoCount &&
       profile.discoverable &&
       profile.visibility !== "private",
@@ -729,7 +730,7 @@ async function fetchCandidateProfiles(ownedProfile: OwnedProfile) {
     .select("*")
     .neq("user_id", ownedProfile.account.id)
     .not("onboarding_completed_at", "is", null)
-    .gte("profile_completion_score", 80)
+    .gte("profile_completion_score", minimumBasicProfileCompletion)
     .eq("discoverable", true)
     .neq("visibility", "private")
     .limit(100);
@@ -1256,6 +1257,17 @@ function buildRecommendation({
       (sameConversationStyle ? 11 : 0) +
       (sameAvailability ? 9 : 0) +
       personalityFit +
+      Math.min(
+        5,
+        Math.max(
+          0,
+          Math.floor(
+            (candidate.profile_completion_score -
+              minimumBasicProfileCompletion) /
+              10,
+          ),
+        ),
+      ) +
       (candidate.has_active_boost ? 6 : 0),
   );
   const reasons = buildReasons({

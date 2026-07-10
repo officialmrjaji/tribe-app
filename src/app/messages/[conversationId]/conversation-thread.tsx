@@ -15,6 +15,7 @@ import type {
   ConversationSummary,
   ConversationThread as ConversationThreadPayload,
 } from "@/lib/messaging/service";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type ApiErrorPayload = {
   error?: string;
@@ -143,6 +144,59 @@ export default function ConversationThread({
     [thread?.messages],
   );
 
+  async function refreshThread() {
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversationId}/messages?limit=30`,
+        {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | (ConversationThreadPayload & ApiErrorPayload)
+        | null;
+
+      if (!response.ok || !payload) {
+        return;
+      }
+
+      const incomingMessages = payload.messages.map(markMessageSent);
+      setThread((currentThread) => ({
+        ...payload,
+        messages: currentThread
+          ? mergeMessages([...currentThread.messages, ...incomingMessages])
+          : incomingMessages,
+      }));
+
+      if (payload.conversation.unreadCount > 0) {
+        await fetch(`/api/conversations/${conversationId}/read`, {
+          method: "POST",
+        }).catch(() => null);
+        setThread((currentThread) =>
+          currentThread
+            ? {
+                ...currentThread,
+                conversation: {
+                  ...currentThread.conversation,
+                  unreadCount: 0,
+                },
+              }
+            : currentThread,
+        );
+      }
+    } catch {
+      // The interval fallback will retry without interrupting the composer.
+    }
+  }
+
+  useRealtimeInvalidation({
+    events: ["messages"],
+    onInvalidate: () => {
+      void refreshThread();
+    },
+  });
+
   async function loadOlderMessages() {
     const cursor = thread?.pagination.nextCursor;
 
@@ -265,10 +319,12 @@ export default function ConversationThread({
           ? {
               ...currentThread,
               conversation: payload.conversation ?? currentThread.conversation,
-              messages: currentThread.messages.map((conversationMessage) =>
-                conversationMessage.id === optimisticId
-                  ? sentMessage
-                  : conversationMessage,
+              messages: mergeMessages(
+                currentThread.messages.map((conversationMessage) =>
+                  conversationMessage.id === optimisticId
+                    ? sentMessage
+                    : conversationMessage,
+                ),
               ),
             }
           : currentThread,

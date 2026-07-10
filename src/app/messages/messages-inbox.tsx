@@ -9,8 +9,9 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ConversationSummary } from "@/lib/messaging/service";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type ConversationsPayload = {
   conversations?: ConversationSummary[];
@@ -28,53 +29,56 @@ export default function MessagesInbox() {
     0,
   );
 
-  useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
+  const loadConversations = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setError("");
+      const response = await fetch("/api/conversations", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | ConversationsPayload
+        | null;
 
-    async function loadConversations() {
-      try {
-        setError("");
-        const response = await fetch("/api/conversations", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | ConversationsPayload
-          | null;
-
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Unable to load conversations.");
-        }
-
-        if (isMounted) {
-          setConversations(payload?.conversations ?? []);
-          setStatus("ready");
-        }
-      } catch (loadError) {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        if (isMounted) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Unable to load conversations.",
-          );
-          setStatus("error");
-        }
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to load conversations.");
       }
-    }
 
-    loadConversations();
+      setConversations(payload?.conversations ?? []);
+      setStatus("ready");
+    } catch (loadError) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load conversations.",
+      );
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadConversations(controller.signal);
+    }, 0);
 
     return () => {
-      isMounted = false;
+      window.clearTimeout(timer);
       controller.abort();
     };
-  }, []);
+  }, [loadConversations]);
+
+  useRealtimeInvalidation({
+    events: ["connections", "messages"],
+    onInvalidate: () => {
+      void loadConversations();
+    },
+  });
 
   useEffect(() => {
     function applyConversationUpdate(conversation: ConversationSummary) {

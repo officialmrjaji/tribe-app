@@ -66,6 +66,17 @@ export const availabilityValues = [
 
 export type Availability = (typeof availabilityValues)[number];
 
+export const genderValues = [
+  "woman",
+  "man",
+  "non_binary",
+  "genderfluid",
+  "agender",
+  "prefer_not_to_say",
+] as const;
+
+export type Gender = (typeof genderValues)[number];
+
 export const intentLabels: Record<Intent, string> = {
   activity_partner: "Activity partner",
   dating: "Dating",
@@ -122,6 +133,15 @@ export const availabilityLabels: Record<Availability, string> = {
   weekends: "Weekends",
 };
 
+export const genderLabels: Record<Gender, string> = {
+  agender: "Agender",
+  genderfluid: "Genderfluid",
+  man: "Man",
+  non_binary: "Non-binary",
+  prefer_not_to_say: "Prefer not to say",
+  woman: "Woman",
+};
+
 export const intentOptions = intentValues.map((value) => ({
   label: intentLabels[value],
   value,
@@ -149,5 +169,10 @@ export const conversationStyleOptions = conversationStyleValues.map((value) => (
 
 export const availabilityOptions = availabilityValues.map((value) => ({
   label: availabilityLabels[value],
+  value,
+}));
+
+export const genderOptions = genderValues.map((value) => ({
+  label: genderLabels[value],
   value,
 }));

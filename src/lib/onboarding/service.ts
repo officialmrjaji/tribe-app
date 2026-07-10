@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type {
   Availability,
   ConversationStyle,
+  Gender,
   Intent,
   Interest,
   LifestyleSignal,
@@ -21,6 +22,7 @@ export type OnboardingRecord = {
   completed_at: string | null;
   conversation_style: ConversationStyle;
   created_at: string;
+  gender: Gender | null;
   id: string;
   intent: Intent;
   interests: Interest[];
@@ -46,6 +48,7 @@ function toSnapshot(record: OnboardingRecord): OnboardingSnapshot {
     availability: record.availability,
     completedAt: record.completed_at,
     conversationStyle: record.conversation_style,
+    gender: record.gender ?? undefined,
     intent: record.intent,
     interests: record.interests,
     lifestyleSignals: record.lifestyle_signals,
@@ -99,6 +102,7 @@ export async function saveOnboardingResponse(
         availability: input.availability,
         completed_at: now,
         conversation_style: input.conversationStyle,
+        gender: input.gender ?? null,
         intent: input.intent,
         interests: input.interests,
         lifestyle_signals: input.lifestyleSignals,
@@ -139,6 +143,7 @@ export async function saveOnboardingResponse(
   const profileUpdates: {
     archetype: string;
     discoverable?: boolean;
+    gender?: Gender;
     onboarding_completed_at: string;
     social_pace: string;
     temperament_summary: string;
@@ -155,6 +160,10 @@ export async function saveOnboardingResponse(
   if (!ownedProfile.profile.onboarding_completed_at) {
     profileUpdates.discoverable = true;
     profileUpdates.visibility = "discoverable";
+  }
+
+  if (input.gender) {
+    profileUpdates.gender = input.gender;
   }
 
   const { error: profileError } = await supabase

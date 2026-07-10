@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type NotificationsPayload = {
   unreadCount?: number;
@@ -9,35 +10,36 @@ type NotificationsPayload = {
 export function NotificationBadge() {
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications?limit=1", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | NotificationsPayload
+        | null;
 
-    async function loadUnreadCount() {
-      try {
-        const response = await fetch("/api/notifications?limit=1", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | NotificationsPayload
-          | null;
-
-        if (isMounted && response.ok) {
-          setUnreadCount(payload?.unreadCount ?? 0);
-        }
-      } catch {
-        if (isMounted) {
-          setUnreadCount(0);
-        }
+      if (response.ok) {
+        setUnreadCount(payload?.unreadCount ?? 0);
       }
+    } catch {
+      // Keep the last known count; the fallback will retry.
     }
-
-    loadUnreadCount();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadUnreadCount();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadUnreadCount]);
+
+  useRealtimeInvalidation({
+    events: ["notifications"],
+    onInvalidate: loadUnreadCount,
+  });
 
   if (unreadCount === 0) {
     return null;

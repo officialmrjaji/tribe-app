@@ -13,18 +13,20 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { ProfilePhotoManager } from "@/components/profile/profile-photo-manager";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import {
   availabilityLabels,
   conversationStyleLabels,
+  genderOptions,
   intentLabels,
   interestLabels,
   lifestyleSignalLabels,
   personalityTypeLabels,
+  type Gender,
 } from "@/lib/onboarding/options";
 import type { OnboardingSnapshot } from "@/lib/onboarding/service";
 import type {
@@ -57,6 +59,7 @@ type ProfileDraft = {
   country: string;
   discoverable: boolean;
   displayName: string;
+  gender: Gender | "";
   region: string;
   visibility: "private" | "members" | "discoverable";
 };
@@ -81,6 +84,7 @@ export default function ProfileEditor({
     country: profile.country ?? "",
     discoverable: profile.discoverable,
     displayName: profile.display_name ?? "",
+    gender: profile.gender ?? "",
     region: profile.region ?? "",
     visibility: profile.visibility,
   });
@@ -94,13 +98,12 @@ export default function ProfileEditor({
       promptText: option.text,
     })),
   );
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceDuration, setVoiceDuration] = useState<number | null>(
     profile.voice_intro_duration_seconds,
   );
   const [pendingAction, setPendingAction] = useState<
-    "profile" | "photos" | "prompts" | "voice" | null
+    "profile" | "prompts" | "voice" | null
   >(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -108,21 +111,13 @@ export default function ProfileEditor({
   const voiceReady = Boolean(
     voiceFile && voiceDuration && voiceDuration >= 30 && voiceDuration <= 60,
   );
-  const photosRemaining = Math.max(0, 6 - quality.photos.length);
   const completionTone =
-    quality.completeness >= 80 ? "text-[#2f5f36]" : "text-[#8a3325]";
+    quality.completeness >= 50 ? "text-[#2f5f36]" : "text-[#8a3325]";
   const photosNeeded = Math.max(
     0,
     quality.minimumPhotoCount - quality.uploadedPhotoCount,
   );
 
-  const sortedPhotos = useMemo(
-    () =>
-      [...quality.photos].sort(
-        (left, right) => left.sort_order - right.sort_order,
-      ),
-    [quality.photos],
-  );
   const languageSignals =
     onboarding?.interests.includes("languages") ||
     onboarding?.intent === "language_exchange"
@@ -168,6 +163,7 @@ export default function ProfileEditor({
           country: draft.country,
           discoverable: draft.discoverable,
           displayName: draft.displayName,
+          gender: draft.gender || null,
           region: draft.region,
           visibility: draft.visibility,
         }),
@@ -192,44 +188,6 @@ export default function ProfileEditor({
         saveError instanceof Error
           ? saveError.message
           : "Profile could not be saved.",
-      );
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function uploadPhotos() {
-    if (photoFiles.length === 0) {
-      return;
-    }
-
-    setPendingAction("photos");
-    setMessage("");
-    setError("");
-
-    try {
-      const formData = new FormData();
-      photoFiles.slice(0, photosRemaining).forEach((file) => {
-        formData.append("photos", file);
-      });
-      const response = await fetch("/api/profile/photos", {
-        body: formData,
-        method: "POST",
-      });
-      const responseBody = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(responseBody?.error ?? "Photos could not be uploaded.");
-      }
-
-      setQuality(responseBody as ProfileQualitySnapshot);
-      setPhotoFiles([]);
-      setMessage("Profile photos uploaded successfully.");
-    } catch (uploadError) {
-      setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : "Photos could not be uploaded.",
       );
     } finally {
       setPendingAction(null);
@@ -346,7 +304,8 @@ export default function ProfileEditor({
             </Link>
             <h1 className="mt-2 text-2xl font-semibold">Edit profile</h1>
             <p className="mt-2 text-sm leading-6 text-[#34443a]">
-              Profiles must reach 80% completeness before People opens.
+              People opens at 50% with three real photos. Reach 80% or more for
+              stronger recommendations and profile visibility.
             </p>
           </div>
           <button
@@ -453,67 +412,45 @@ export default function ProfileEditor({
                   />
                 </label>
               </div>
+
+              <label className="block">
+                <span className="text-sm font-semibold text-[#34443a]">
+                  Gender
+                </span>
+                <select
+                  className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
+                  onChange={(event) =>
+                    updateDraft({
+                      gender: event.target.value as Gender | "",
+                    })
+                  }
+                  value={draft.gender}
+                >
+                  <option value="">Choose an option</option>
+                  {genderOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs leading-5 text-[#607265]">
+                  Used as a private matching foundation. It is not shown as a
+                  headline on your public profile.
+                </span>
+              </label>
             </section>
 
             <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
               <SectionHeader
-                body="Upload at least 3 real profile photos to unlock People. Illustrated avatars can remain as supplementary media."
+                body="Upload, replace, remove, or reorder up to 6 photos. Keep a real photo first; illustrated avatars remain supplementary."
                 icon={ImagePlus}
                 eyebrow="Photos"
                 title="Profile photos"
               />
-              {sortedPhotos.length ? (
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-                  {sortedPhotos.map((photo) => {
-                    const isSupplementary = !isUploadedProfilePhoto(photo);
-
-                    return (
-                      <div className="relative" key={photo.id}>
-                        <Image
-                          alt={photo.alt_text ?? "Profile photo"}
-                          className="aspect-square rounded-md object-cover"
-                          height={120}
-                          src={photo.image_url}
-                          width={120}
-                        />
-                        {isSupplementary ? (
-                          <span className="absolute bottom-1 left-1 rounded-md bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#607265] shadow-sm">
-                            Supplementary
-                          </span>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <input
-                  accept="image/*"
-                  disabled={photosRemaining === 0}
-                  multiple
-                  onChange={(event) =>
-                    setPhotoFiles(Array.from(event.target.files ?? []))
-                  }
-                  type="file"
-                />
-                <button
-                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                  disabled={
-                    pendingAction === "photos" ||
-                    photosRemaining === 0 ||
-                    photoFiles.length === 0
-                  }
-                  onClick={uploadPhotos}
-                  type="button"
-                >
-                  {pendingAction === "photos" ? (
-                    <LoaderCircle className="animate-spin" size={16} />
-                  ) : (
-                    <ImagePlus size={16} />
-                  )}
-                  Upload photos
-                </button>
-              </div>
+              <ProfilePhotoManager
+                onQualityChange={setQuality}
+                quality={quality}
+              />
             </section>
 
             <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
@@ -666,16 +603,23 @@ export default function ProfileEditor({
                   style={{ width: `${quality.completeness}%` }}
                 />
               </div>
-              {quality.completeness < 80 ? (
+              {!quality.hasMinimumPhotos ? (
                 <p className="mt-3 text-sm leading-6 text-[#8a3325]">
-                  {quality.hasMinimumPhotos
-                    ? "People unlocks at 80%."
-                    : "Upload at least 3 real profile photos to unlock People."}
+                  Upload at least 3 real profile photos to unlock People.
+                </p>
+              ) : quality.completeness < 50 ? (
+                <p className="mt-3 text-sm leading-6 text-[#8a3325]">
+                  Complete at least 50% of your profile to open People.
+                </p>
+              ) : quality.completeness < 80 ? (
+                <p className="mt-3 text-sm leading-6 text-[#34443a]">
+                  People is ready. Reach 80% or more for better matching quality
+                  and recommendation priority.
                 </p>
               ) : (
                 <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[#2f5f36]">
                   <Check size={15} />
-                  People ready
+                  Profile quality ready
                 </p>
               )}
             </section>
@@ -698,8 +642,8 @@ export default function ProfileEditor({
                 Profile completeness checklist
               </p>
               <p className="mt-1 text-sm leading-6 text-[#34443a]">
-                Finish these items to keep People, liking, and messaging
-                trustworthy for everyone.
+                Basic access starts at 50% with three real photos. Completing
+                more helps people understand you and improves matching quality.
               </p>
               <div className="mt-3 space-y-2">
                 {quality.checklist.map((item) => (
@@ -841,13 +785,6 @@ function SignalGroup({ label, values }: { label: string; values: string[] }) {
         ))}
       </div>
     </div>
-  );
-}
-
-function isUploadedProfilePhoto(photo: ProfileQualitySnapshot["photos"][number]) {
-  return (
-    Boolean(photo.storage_path) &&
-    !photo.image_url.toLowerCase().includes("/avatars/")
   );
 }
 

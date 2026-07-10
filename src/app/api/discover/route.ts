@@ -5,6 +5,7 @@ import { getDiscoveryRecommendations } from "@/lib/discovery/service";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
 import {
   getProfileQuality,
+  minimumBasicProfileCompletion,
   profilePhotoRequirementMessage,
 } from "@/lib/profile/service";
 
@@ -57,11 +58,11 @@ export async function GET() {
       );
     }
 
-    if (quality.completeness < 80) {
+    if (quality.completeness < minimumBasicProfileCompletion) {
       return NextResponse.json(
         {
           completed: false,
-          error: "Profile completion required",
+          error: `Complete at least ${minimumBasicProfileCompletion}% of your profile to open People.`,
           profileCompleteness: quality.completeness,
           redirectTo: "/profile/edit",
         },

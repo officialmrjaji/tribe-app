@@ -44,7 +44,7 @@ const settingsSections: SettingsSection[] = [
     label: "Privacy",
   },
   {
-    body: "Tune whether you appear in recommendations and keep your profile quality above launch standards.",
+    body: "Control whether you appear in People. Basic access starts at 50%; completing 80% or more improves recommendation quality.",
     href: "/profile/edit",
     icon: Search,
     label: "People visibility",
