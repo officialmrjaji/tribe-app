@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import type { SquareComment, SquarePost } from "@/lib/square/service";
@@ -50,6 +51,7 @@ export function SquarePostCard({
   onDeleted,
   post,
 }: SquarePostCardProps) {
+  const router = useRouter();
   const [currentPost, setCurrentPost] = useState(post);
   const [comments, setComments] = useState(post.comments ?? []);
   const [commentDraft, setCommentDraft] = useState("");
@@ -68,6 +70,13 @@ export function SquarePostCard({
 
   const commentTree = useMemo(() => buildCommentTree(comments), [comments]);
   const previewComments = commentTree.slice(0, 2);
+  const detailHref = `/square/posts/${currentPost.id}`;
+
+  function openPostDetail() {
+    if (!expanded && !editingPost) {
+      router.push(detailHref);
+    }
+  }
 
   function openCommentComposer() {
     setShowComposer(true);
@@ -810,9 +819,24 @@ export function SquarePostCard({
             </div>
           </form>
         ) : (
-          <div className="mt-4 space-y-3">
+          <div
+            aria-label={`Open ${currentPost.author.name}'s Square post`}
+            className={cx(
+              "mt-4 space-y-3",
+              !expanded && "cursor-pointer rounded-md transition hover:bg-[#f8fcf9]",
+            )}
+            onClick={openPostDetail}
+            onKeyDown={(event) => {
+              if (!expanded && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                openPostDetail();
+              }
+            }}
+            role={!expanded ? "link" : undefined}
+            tabIndex={!expanded ? 0 : undefined}
+          >
             {currentPost.body ? (
-              <RichText text={currentPost.body} />
+              <RichText compact={!expanded} text={currentPost.body} />
             ) : null}
             {currentPost.caption ? (
               <p className="text-sm leading-6 text-[#477060]">
@@ -820,18 +844,20 @@ export function SquarePostCard({
               </p>
             ) : null}
             {currentPost.imageUrl ? (
-              <ProfilePhotoGallery
-                label="Open Square photo"
-                photos={[currentPost.imageUrl]}
-              >
-                <Image
-                  alt={currentPost.caption ?? "Square photo"}
-                  className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
-                  height={520}
-                  src={currentPost.imageUrl}
-                  width={900}
-                />
-              </ProfilePhotoGallery>
+              <div onClick={(event) => event.stopPropagation()}>
+                <ProfilePhotoGallery
+                  label="Open Square photo"
+                  photos={[currentPost.imageUrl]}
+                >
+                  <Image
+                    alt={currentPost.caption ?? "Square photo"}
+                    className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
+                    height={520}
+                    src={currentPost.imageUrl}
+                    width={900}
+                  />
+                </ProfilePhotoGallery>
+              </div>
             ) : null}
           </div>
         )}
@@ -874,6 +900,7 @@ export function SquarePostCard({
                 className="rounded-md bg-[#f3f8f5] px-2.5 py-1 text-xs font-semibold text-[#34443a] transition hover:bg-[#e4f4ec]"
                 href={`/square/topics/${topic.slug}`}
                 key={topic.id}
+                onClick={(event) => event.stopPropagation()}
               >
                 #{topic.slug}
               </Link>
@@ -908,9 +935,9 @@ export function SquarePostCard({
             <Link
               aria-label={`${currentPost.commentCount} comment${
                 currentPost.commentCount === 1 ? "" : "s"
-              }. Open discussion.`}
+              }. Open comments.`}
               className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-[#c9ddd3] bg-white px-3 text-sm font-semibold text-[#34443a] transition duration-150 hover:bg-[#eef7f1]"
-              href={`/square/posts/${currentPost.id}`}
+              href={detailHref}
             >
               <MessageCircle size={16} />
               <span aria-hidden="true">{currentPost.commentCount}</span>
@@ -929,14 +956,6 @@ export function SquarePostCard({
             label={`${currentPost.repostCount} Repost`}
             onClick={repostPost}
           />
-          {!expanded ? (
-            <Link
-              className="ml-auto inline-flex min-h-9 items-center justify-center rounded-md px-2 text-sm font-semibold text-[#176b57] transition hover:bg-[#eef7f1]"
-              href={`/square/posts/${currentPost.id}`}
-            >
-              Open discussion
-            </Link>
-          ) : null}
         </div>
       </div>
 
@@ -1093,11 +1112,13 @@ function CommentItem({
   return (
     <div
       className={cx(
-        "rounded-md bg-white px-3 py-3 shadow-sm",
-        depth > 0 && "border-l-2 border-[#9cc7b7]",
+        "rounded-md px-3 py-3",
+        depth === 0
+          ? "border border-[#dcebe4] bg-white shadow-sm"
+          : "border-l-2 border-[#9cc7b7] bg-[#f8fcf9]",
       )}
       id={`comment-${comment.id}`}
-      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 14 : 0 }}
+      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 16 : 0 }}
     >
       <div className="flex items-start gap-3">
         {comment.author.avatarUrl ? (
@@ -1266,7 +1287,7 @@ function CommentItem({
           ) : null}
 
           {comment.replies.length ? (
-            <div className="mt-2 space-y-2">
+            <div className="mt-3 space-y-2 border-l border-[#dcebe4] pl-3">
               {comment.replies.map((reply) => (
                 <CommentItem
                   comment={reply}
@@ -1465,10 +1486,16 @@ function Notice({
   );
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ compact = false, text }: { compact?: boolean; text: string }) {
+  const shouldTruncate = compact && text.length > 420;
+  const displayText = shouldTruncate ? `${text.slice(0, 420).trim()}...` : text;
+
   return (
     <p className="whitespace-pre-wrap text-sm leading-6 text-[#34443a]">
-      <RichInlineText text={text} />
+      <RichInlineText text={displayText} />
+      {shouldTruncate ? (
+        <span className="ml-1 font-semibold text-[#176b57]">Read more</span>
+      ) : null}
     </p>
   );
 }
@@ -1487,6 +1514,7 @@ function RichInlineText({ text }: { text: string }) {
               className="font-semibold text-[#176b57] hover:text-[#125744]"
               href={`/square/topics/${slug}`}
               key={`${part}-${index}`}
+              onClick={(event) => event.stopPropagation()}
             >
               {part}
             </Link>

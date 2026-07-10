@@ -21,7 +21,7 @@ import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import {
   availabilityLabels,
   conversationStyleLabels,
-  genderOptions,
+  genderLabels,
   intentLabels,
   interestLabels,
   lifestyleSignalLabels,
@@ -158,12 +158,9 @@ export default function ProfileEditor({
       const response = await fetch("/api/profile", {
         body: JSON.stringify({
           bio: draft.bio,
-          birthdate: draft.birthdate || null,
           city: draft.city,
           country: draft.country,
           discoverable: draft.discoverable,
-          displayName: draft.displayName,
-          gender: draft.gender || null,
           region: draft.region,
           visibility: draft.visibility,
         }),
@@ -338,22 +335,45 @@ export default function ProfileEditor({
               <SectionHeader
                 eyebrow="About"
                 title="Core profile"
-                body="Name, location, and bio give people enough context before they like or message."
+                body="Your public story can keep evolving. Identity details are fixed after onboarding so profiles stay trustworthy."
               />
-              <label className="block">
-                <span className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
+              <div className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
                   <UserRound size={16} />
-                  Display name
-                </span>
-                <input
-                  className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition placeholder:text-[#7c8b80] focus:border-[#17251f]"
-                  maxLength={120}
-                  onChange={(event) =>
-                    updateDraft({ displayName: event.target.value })
-                  }
-                  value={draft.displayName}
-                />
-              </label>
+                  Identity details
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#607265]">
+                  Display name, gender, and date of birth are fixed after
+                  onboarding. This keeps member profiles consistent and trusted.
+                  Contact support if one needs a correction.
+                </p>
+                <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <dt className="font-semibold text-[#607265]">
+                      Display name
+                    </dt>
+                    <dd className="mt-1 text-[#17201b]">
+                      {draft.displayName || "Set during onboarding"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-[#607265]">Gender</dt>
+                    <dd className="mt-1 text-[#17201b]">
+                      {draft.gender
+                        ? genderLabels[draft.gender]
+                        : "Set during onboarding"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-[#607265]">
+                      Date of birth
+                    </dt>
+                    <dd className="mt-1 text-[#17201b]">
+                      {draft.birthdate || "Set during onboarding"}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
 
               <label className="block">
                 <span className="text-sm font-semibold text-[#34443a]">Bio</span>
@@ -365,7 +385,7 @@ export default function ProfileEditor({
                 />
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <label className="block">
                   <span className="flex items-center gap-2 text-sm font-semibold text-[#34443a]">
                     <MapPin size={16} />
@@ -407,46 +427,7 @@ export default function ProfileEditor({
                   />
                 </label>
 
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#34443a]">
-                    Birthdate
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
-                    onChange={(event) =>
-                      updateDraft({ birthdate: event.target.value })
-                    }
-                    type="date"
-                    value={draft.birthdate}
-                  />
-                </label>
               </div>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-[#34443a]">
-                  Gender
-                </span>
-                <select
-                  className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
-                  onChange={(event) =>
-                    updateDraft({
-                      gender: event.target.value as Gender | "",
-                    })
-                  }
-                  value={draft.gender}
-                >
-                  <option value="">Choose an option</option>
-                  {genderOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs leading-5 text-[#607265]">
-                  Used as a private matching foundation. It is not shown as a
-                  headline on your public profile.
-                </span>
-              </label>
             </section>
 
             <section className="space-y-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">

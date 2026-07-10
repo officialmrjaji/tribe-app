@@ -2,7 +2,9 @@ import type { OwnedProfile } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 export type NotificationType =
+  | "account_security"
   | "conversation_created"
+  | "feature_update"
   | "mutual_save"
   | "new_message"
   | "profile_saved"
@@ -10,7 +12,8 @@ export type NotificationType =
   | "square_like"
   | "square_mention"
   | "square_reply"
-  | "square_repost";
+  | "square_repost"
+  | "system_announcement";
 
 export type NotificationRecord = {
   actorName: string | null;
@@ -23,7 +26,8 @@ export type NotificationRecord = {
     | "message"
     | "profile"
     | "square_comment"
-    | "square_post";
+    | "square_post"
+    | "system";
   href: string;
   id: string;
   isRead: boolean;
@@ -49,6 +53,11 @@ type ProfileSummaryRow = {
   display_name: string | null;
   user_id: string;
 };
+
+const hiddenNotificationTypes = new Set<NotificationType>([
+  "conversation_created",
+  "new_message",
+]);
 
 export async function createNotification({
   actorUserId,
@@ -113,6 +122,7 @@ export async function listNotifications(
     .from("notifications")
     .select("*")
     .eq("recipient_user_id", ownedProfile.account.id)
+    .not("type", "in", "(new_message,conversation_created)")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -121,14 +131,17 @@ export async function listNotifications(
   }
 
   const rows = (data ?? []) as NotificationRow[];
+  const visibleRows = rows.filter(isVisibleNotification);
   const actorUserIds = Array.from(
-    new Set(rows.map((row) => row.actor_user_id).filter(Boolean) as string[]),
+    new Set(
+      visibleRows.map((row) => row.actor_user_id).filter(Boolean) as string[],
+    ),
   );
   const actorProfiles = await fetchProfilesByUserIds(actorUserIds);
   const unreadCount = await getUnreadNotificationCount(ownedProfile);
 
   return {
-    notifications: rows.map((row) =>
+    notifications: visibleRows.map((row) =>
       formatNotification(row, actorProfiles.get(row.actor_user_id ?? "")),
     ),
     unreadCount,
@@ -141,7 +154,8 @@ export async function getUnreadNotificationCount(ownedProfile: OwnedProfile) {
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .eq("recipient_user_id", ownedProfile.account.id)
-    .is("read_at", null);
+    .is("read_at", null)
+    .not("type", "in", "(new_message,conversation_created)");
 
   if (error) {
     throw error;
@@ -180,13 +194,18 @@ export async function markAllNotificationsRead(ownedProfile: OwnedProfile) {
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_user_id", ownedProfile.account.id)
-    .is("read_at", null);
+    .is("read_at", null)
+    .not("type", "in", "(new_message,conversation_created)");
 
   if (error) {
     throw error;
   }
 
   return { read: true };
+}
+
+function isVisibleNotification(row: NotificationRow) {
+  return !hiddenNotificationTypes.has(row.type);
 }
 
 async function fetchProfilesByUserIds(userIds: string[]) {
@@ -302,11 +321,42 @@ function formatNotification(
     };
   }
 
+  if (row.type === "system_announcement") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/notifications",
+      message: stringFromData(row.data, "message") ?? "A TribeApp update is ready.",
+      title: "System announcement",
+    };
+  }
+
+  if (row.type === "feature_update") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/notifications",
+      message:
+        stringFromData(row.data, "message") ??
+        "A product update is available to review.",
+      title: "Feature update",
+    };
+  }
+
+  if (row.type === "account_security") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/settings",
+      message:
+        stringFromData(row.data, "message") ??
+        "Review an important account or security update.",
+      title: "Account notice",
+    };
+  }
+
   return {
     ...baseNotification(row, actorName),
-    href: conversationId ? `/messages/${conversationId}` : "/messages",
-    message: `${displayName} opened a conversation with you.`,
-    title: "Conversation started",
+    href: "/notifications",
+    message: "An activity update is available.",
+    title: "Activity",
   };
 }
 

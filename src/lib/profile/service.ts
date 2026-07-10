@@ -70,6 +70,18 @@ export class ProfileQualityRequirementError extends Error {
   }
 }
 
+export class ProfileIdentityLockedError extends Error {
+  status: number;
+
+  constructor() {
+    super(
+      "Display name, gender, and date of birth are fixed after onboarding. Contact support if one needs a correction.",
+    );
+    this.name = "ProfileIdentityLockedError";
+    this.status = 403;
+  }
+}
+
 type UserAccount = {
   banned_at?: string | null;
   clerk_user_id: string;
@@ -889,16 +901,15 @@ export async function updateOwnedProfile(
     return null;
   }
 
+  assertEditableIdentityFields(ownedProfile.profile, input);
+
   const updates = {
     archetype: input.archetype,
     avatar_url: input.avatarUrl,
     bio: input.bio,
-    birthdate: input.birthdate,
     city: input.city,
     country: input.country,
     discoverable: input.discoverable,
-    display_name: input.displayName,
-    gender: input.gender,
     region: input.region,
     social_pace: input.socialPace,
     temperament_summary: input.temperamentSummary,
@@ -935,6 +946,38 @@ export async function updateOwnedProfile(
       profile_completion_score: quality.completeness,
     },
   };
+}
+
+function assertEditableIdentityFields(
+  profile: ProfileRecord,
+  input: ProfileInput,
+) {
+  if (!profile.onboarding_completed_at) {
+    return;
+  }
+
+  const changesLockedIdentity =
+    changedLockedValue(profile.display_name, input.displayName) ||
+    changedLockedValue(profile.gender, input.gender) ||
+    changedLockedValue(profile.birthdate, input.birthdate);
+
+  if (changesLockedIdentity) {
+    throw new ProfileIdentityLockedError();
+  }
+}
+
+function changedLockedValue(
+  currentValue: string | null,
+  nextValue: string | null | undefined,
+) {
+  if (nextValue === undefined) {
+    return false;
+  }
+
+  const current = currentValue?.trim() ?? "";
+  const next = nextValue?.trim() ?? "";
+
+  return current.length > 0 && current !== next;
 }
 
 async function refreshProfileQuality(ownedProfile: OwnedProfile) {

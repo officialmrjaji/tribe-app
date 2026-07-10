@@ -4,7 +4,9 @@ import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import { getPublicMemberProfile } from "@/lib/profile/public-profile";
 
 export default async function PublicProfilePage(
-  props: PageProps<"/profiles/[profileId]">,
+  props: PageProps<"/profiles/[profileId]"> & {
+    searchParams: Promise<{ from?: string }>;
+  },
 ) {
   const session = await getCurrentOwnedProfile();
 
@@ -13,6 +15,7 @@ export default async function PublicProfilePage(
   }
 
   const { profileId } = await props.params;
+  const searchParams = await props.searchParams;
   const profile = await getPublicMemberProfile({
     ownedProfile: session.ownedProfile,
     profileId,
@@ -22,10 +25,12 @@ export default async function PublicProfilePage(
     notFound();
   }
 
+  const fromPeople = searchParams.from === "people";
+
   return (
     <PublicProfileView
-      backHref="/explore"
-      backLabel="Connections"
+      backHref={fromPeople ? "/" : "/explore"}
+      backLabel={fromPeople ? "People" : "Connections"}
       editHref={profile.isOwnProfile ? "/profile/edit" : undefined}
       profile={profile}
     />

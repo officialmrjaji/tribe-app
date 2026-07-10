@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
-import { createNotification } from "@/lib/notifications/service";
 import {
   getOnboardingStatus,
   type OnboardingSnapshot,
@@ -203,17 +202,6 @@ export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
   if (participantError) {
     throw participantError;
   }
-
-  await createNotification({
-    actorUserId: ownedProfile.account.id,
-    data: {
-      sessionId: voiceSession.id,
-    },
-    entityId: voiceSession.id,
-    entityType: "conversation",
-    recipientUserId: candidate.userId,
-    type: "conversation_created",
-  });
 
   return formatVoiceSession({
     continueState: {

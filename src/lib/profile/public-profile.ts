@@ -1,10 +1,12 @@
 import {
   availabilityLabels,
   conversationStyleLabels,
+  genderLabels,
   intentLabels,
   interestLabels,
   lifestyleSignalLabels,
   personalityTypeLabels,
+  type Gender,
   type Interest,
   type LifestyleSignal,
 } from "@/lib/onboarding/options";
@@ -28,6 +30,7 @@ type PublicProfileRow = {
   discoverable: boolean;
   display_name: string | null;
   email_verified_at: string | null;
+  gender: Gender | null;
   has_active_boost?: boolean;
   id: string;
   identity_verified_at: string | null;
@@ -67,6 +70,7 @@ export type PublicMemberProfile = {
   bio: string | null;
   city: string;
   displayName: string;
+  genderLabel: string | null;
   goals: string[];
   hasActiveBoost: boolean;
   id: string;
@@ -264,6 +268,7 @@ function formatPublicProfile({
     bio: profile.bio,
     city: formatLocation(profile),
     displayName: profile.display_name ?? "Tribe member",
+    genderLabel: profile.gender ? genderLabels[profile.gender] : null,
     goals: onboarding ? buildGoals(onboarding) : [],
     hasActiveBoost: boostActive,
     id: profile.id,

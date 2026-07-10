@@ -94,6 +94,10 @@ export async function saveOnboardingResponse(
 ) {
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
+  const storedGender =
+    ownedProfile.profile.onboarding_completed_at && ownedProfile.profile.gender
+      ? ownedProfile.profile.gender
+      : (input.gender ?? null);
 
   const { data: onboarding, error: onboardingError } = await supabase
     .from("onboarding_answers")
@@ -102,7 +106,7 @@ export async function saveOnboardingResponse(
         availability: input.availability,
         completed_at: now,
         conversation_style: input.conversationStyle,
-        gender: input.gender ?? null,
+        gender: storedGender,
         intent: input.intent,
         interests: input.interests,
         lifestyle_signals: input.lifestyleSignals,
@@ -162,7 +166,10 @@ export async function saveOnboardingResponse(
     profileUpdates.visibility = "discoverable";
   }
 
-  if (input.gender) {
+  if (
+    input.gender &&
+    (!ownedProfile.profile.onboarding_completed_at || !ownedProfile.profile.gender)
+  ) {
     profileUpdates.gender = input.gender;
   }
 

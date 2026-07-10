@@ -1,28 +1,17 @@
 "use client";
 
 import {
-  BookOpen,
-  CalendarDays,
   Check,
-  Coffee,
   Eye,
   Heart,
   LoaderCircle,
   MapPin,
-  MessageCircle,
   Mic,
-  Music,
-  Palette,
   RefreshCcw,
-  Search,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Star,
-  UserRound,
-  Users,
   X,
-  Zap,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -31,31 +20,30 @@ import { useEffect, useMemo, useState } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
-import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import type { DiscoveryProfile } from "@/lib/discovery/service";
+import { genderOptions, type Gender } from "@/lib/onboarding/options";
 
-const focusModes = ["Deep talk", "Soft plans", "New circle"] as const;
-type FocusMode = (typeof focusModes)[number];
-
-const filterOptions = ["All", "Creative", "Grounded", "Curious", "Local"] as const;
-type FilterOption = (typeof filterOptions)[number];
-
-const axisMetrics = [
-  { label: "Depth", key: "depth", icon: BookOpen },
-  { label: "Energy", key: "energy", icon: Zap },
-  { label: "Curiosity", key: "curiosity", icon: Star },
-] as const;
-
-const scoreBreakdownMetrics = [
-  { label: "Interests", key: "interests" },
-  { label: "Personality", key: "personality" },
-  { label: "Lifestyle", key: "lifestyle" },
-  { label: "Intent", key: "intent" },
-  { label: "Conversation style", key: "conversationStyle" },
-] as const;
-
-const circleIcons = [Palette, Coffee, Music] as const;
 const undoPassActionId = "__undo_last_pass__";
+const advancedFilterLabels = [
+  "Interests",
+  "Personality",
+  "Lifestyle",
+  "Availability",
+  "Location",
+  "Goals",
+] as const;
+
+type DiscoveryFilters = {
+  gender: Gender | "all";
+  maxAge: string;
+  minAge: string;
+};
+
+const defaultDiscoveryFilters: DiscoveryFilters = {
+  gender: "all",
+  maxAge: "",
+  minAge: "",
+};
 
 const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
@@ -96,6 +84,47 @@ function getMatchLabel(score: number) {
   return "Promising Match";
 }
 
+function loadSavedFilters(): DiscoveryFilters {
+  if (typeof window === "undefined") {
+    return defaultDiscoveryFilters;
+  }
+
+  try {
+    const storedFilters = window.localStorage.getItem("tribe.people.filters");
+
+    if (!storedFilters) {
+      return defaultDiscoveryFilters;
+    }
+
+    return {
+      ...defaultDiscoveryFilters,
+      ...(JSON.parse(storedFilters) as Partial<DiscoveryFilters>),
+    };
+  } catch {
+    return defaultDiscoveryFilters;
+  }
+}
+
+function buildDiscoverUrl(filters: DiscoveryFilters) {
+  const params = new URLSearchParams();
+
+  if (filters.gender !== "all") {
+    params.set("gender", filters.gender);
+  }
+
+  if (filters.minAge) {
+    params.set("minAge", filters.minAge);
+  }
+
+  if (filters.maxAge) {
+    params.set("maxAge", filters.maxAge);
+  }
+
+  const query = params.toString();
+
+  return query ? `/api/discover?${query}` : "/api/discover";
+}
+
 export default function Home() {
   const router = useRouter();
   const [accessState, setAccessState] = useState<"checking" | "ready" | "error">(
@@ -104,8 +133,11 @@ export default function Home() {
   const [accessError, setAccessError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
-  const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
-  const [activeFocus, setActiveFocus] = useState<FocusMode>("Deep talk");
+  const [appliedFilters, setAppliedFilters] =
+    useState<DiscoveryFilters>(loadSavedFilters);
+  const [filterDraft, setFilterDraft] =
+    useState<DiscoveryFilters>(appliedFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [lastPassedProfile, setLastPassedProfile] =
     useState<DiscoveryProfile | null>(null);
   const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
@@ -120,7 +152,8 @@ export default function Home() {
 
     async function loadDiscovery() {
       try {
-        const response = await fetch("/api/discover", {
+        setAccessState("checking");
+        const response = await fetch(buildDiscoverUrl(appliedFilters), {
           cache: "no-store",
           headers: {
             Accept: "application/json",
@@ -165,15 +198,20 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
-  }, [router]);
+  }, [appliedFilters, router]);
 
-  const visibleProfiles = useMemo(() => {
-    if (activeFilter === "All") {
-      return profiles;
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "tribe.people.filters",
+        JSON.stringify(appliedFilters),
+      );
+    } catch {
+      // Filters are still applied for this session.
     }
+  }, [appliedFilters]);
 
-    return profiles.filter((profile) => profile.traits.includes(activeFilter));
-  }, [activeFilter, profiles]);
+  const visibleProfiles = useMemo(() => profiles, [profiles]);
 
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedId) ??
@@ -181,8 +219,25 @@ export default function Home() {
     profiles[0] ??
     null;
 
-  const promptIndex = focusModes.indexOf(activeFocus);
   const isUndoingLastPass = pendingActionProfileId === undoPassActionId;
+  const activeFilterCount = [
+    appliedFilters.gender !== "all",
+    Boolean(appliedFilters.minAge),
+    Boolean(appliedFilters.maxAge),
+  ].filter(Boolean).length;
+
+  function applyFilters() {
+    setAppliedFilters(filterDraft);
+    setFiltersOpen(false);
+    setSelectedId(null);
+  }
+
+  function resetFilters() {
+    setFilterDraft(defaultDiscoveryFilters);
+    setAppliedFilters(defaultDiscoveryFilters);
+    setFiltersOpen(false);
+    setSelectedId(null);
+  }
 
   async function saveProfile(profileId: string) {
     if (savedIds.includes(profileId)) {
@@ -215,14 +270,17 @@ export default function Home() {
         currentIds.includes(profileId) ? currentIds : [...currentIds, profileId],
       );
       setProfiles((currentProfiles) =>
-        currentProfiles.map((profile) =>
-          profile.id === profileId ? { ...profile, isSaved: true } : profile,
-        ),
+        currentProfiles.filter((profile) => profile.id !== profileId),
+      );
+      setSelectedId((currentId) =>
+        currentId === profileId
+          ? profiles.find((profile) => profile.id !== profileId)?.id ?? null
+          : currentId,
       );
       setActionMessage(
         payload?.matched
           ? `You and ${savedProfile?.name ?? "this member"} liked each other. The chat is ready.`
-          : `${savedProfile?.name ?? "Profile"} was added to liked profiles.`,
+          : `${savedProfile?.name ?? "Profile"} was liked and removed from this People queue.`,
       );
     } catch (error) {
       setActionError(
@@ -340,83 +398,43 @@ export default function Home() {
                 Find people by pace, values, and social texture.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <label className="flex h-11 min-w-0 items-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm shadow-sm sm:w-72">
-                <Search size={17} className="shrink-0 text-[#607265]" />
-                <input
-                  className="min-w-0 flex-1 bg-transparent text-[#17201b] outline-none placeholder:text-[#7c8b80]"
-                  placeholder="Search values, circles, plans"
-                  type="search"
-                />
-              </label>
-              <Link
-                className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                href="/messages"
-              >
-                <MessageCircle size={17} />
-                Chats
-              </Link>
-              <Link
-                className="relative flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                href="/explore"
-              >
-                <Heart size={17} />
-                Connections
-              </Link>
-              <Link
-                className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-                href="/profile/edit"
-              >
-                <UserRound size={17} />
-                Edit profile
-              </Link>
-            </div>
+            <button
+              aria-expanded={filtersOpen}
+              aria-label="Open People filters"
+              className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+              onClick={() => setFiltersOpen((current) => !current)}
+              type="button"
+            >
+              <SlidersHorizontal size={17} />
+              Filters
+              {activeFilterCount ? (
+                <span className="rounded-md bg-[#17251f] px-2 py-0.5 text-xs text-white">
+                  {activeFilterCount}
+                </span>
+              ) : null}
+            </button>
           </header>
 
           <section className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-                <SlidersHorizontal size={16} />
-                People filters
-              </p>
-              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                <div className="grid grid-cols-2 gap-2 sm:flex">
-                  {filterOptions.map((option) => (
-                    <button
-                      key={option}
-                      className={cx(
-                        "h-10 rounded-md border px-4 text-sm font-semibold transition",
-                        activeFilter === option
-                          ? "border-[#17251f] bg-[#17251f] text-white"
-                          : "border-[#cbd4c6] bg-white text-[#34443a] hover:border-[#8fa298]",
-                      )}
-                      onClick={() => setActiveFilter(option)}
-                      type="button"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-3 rounded-md border border-[#cbd4c6] bg-white p-1">
-                  {focusModes.map((mode) => (
-                    <button
-                      key={mode}
-                      className={cx(
-                        "h-9 rounded-md px-3 text-sm font-semibold transition",
-                        activeFocus === mode
-                          ? "bg-[#f6c66f] text-[#17201b]"
-                          : "text-[#607265] hover:bg-[#f3f0e6]",
-                      )}
-                      onClick={() => setActiveFocus(mode)}
-                      type="button"
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
+            {filtersOpen ? (
+              <PeopleFilterPanel
+                draft={filterDraft}
+                onApply={applyFilters}
+                onChange={setFilterDraft}
+                onReset={resetFilters}
+              />
+            ) : (
+              <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+                <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                  <SlidersHorizontal size={16} />
+                  People filters
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#34443a]">
+                  Use basic filters lightly. Square and community spaces stay
+                  open to everyone regardless of discovery preferences.
+                </p>
               </div>
-            </div>
+            )}
 
             <Link
               className="rounded-lg border border-[#d8ded1] bg-[#17251f] p-4 text-white shadow-sm transition hover:bg-[#253b32]"
@@ -493,10 +511,10 @@ export default function Home() {
                   </p>
                   <button
                     className="mt-4 flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-                    onClick={() => setActiveFilter("All")}
+                    onClick={resetFilters}
                     type="button"
                   >
-                    Show all matches
+                    Reset filters
                   </button>
                 </div>
               ) : null}
@@ -555,6 +573,11 @@ export default function Home() {
                                 <MapPin size={14} />
                                 {profile.city}
                               </p>
+                              {profile.genderLabel ? (
+                                <p className="mt-1 text-xs font-semibold text-[#607265]">
+                                  {profile.genderLabel}
+                                </p>
+                              ) : null}
                             </div>
                             <span
                               className={cx(
@@ -636,7 +659,7 @@ export default function Home() {
                       </button>
                       <Link
                         className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                        href={`/profiles/${profile.id}`}
+                        href={`/profiles/${profile.id}?from=people`}
                         aria-label={`View ${profile.name}`}
                       >
                         <Eye size={18} />
@@ -666,7 +689,6 @@ export default function Home() {
         <aside className="border-t border-[#d8ded1] bg-white px-4 py-5 sm:px-6 lg:border-l lg:border-t-0">
           {selectedProfile ? (
             <SelectedProfilePanel
-              activeFocus={activeFocus}
               isPending={pendingActionProfileId === selectedProfile.id}
               isSaved={
                 savedIds.includes(selectedProfile.id) || selectedProfile.isSaved
@@ -674,7 +696,6 @@ export default function Home() {
               onPass={() => passProfile(selectedProfile.id)}
               onSave={() => saveProfile(selectedProfile.id)}
               profile={selectedProfile}
-              promptIndex={promptIndex}
             />
           ) : (
             <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 text-sm leading-6 text-[#34443a] shadow-sm">
@@ -689,21 +710,17 @@ export default function Home() {
 }
 
 function SelectedProfilePanel({
-  activeFocus,
   isPending,
   isSaved,
   onPass,
   onSave,
   profile,
-  promptIndex,
 }: {
-  activeFocus: FocusMode;
   isPending: boolean;
   isSaved: boolean;
   onPass: () => void;
   onSave: () => void;
   profile: DiscoveryProfile;
-  promptIndex: number;
 }) {
   return (
     <div className="rounded-lg border border-[#d8ded1] bg-[#fbfaf4] p-4 shadow-sm">
@@ -721,16 +738,19 @@ function SelectedProfilePanel({
           />
         </ProfilePhotoGallery>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[#607265]">
-            Selected signal
-          </p>
+          <p className="text-sm font-semibold text-[#607265]">Selected person</p>
           <h2 className="mt-1 text-xl font-semibold">
             {profile.name}
             {profile.age ? `, ${profile.age}` : ""}
           </h2>
-          <p className="mt-1 text-sm text-[#607265]">
-            {profile.personalitySummary}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#607265]">
+            <span>{profile.city}</span>
+            {profile.genderLabel ? (
+              <span className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold">
+                {profile.genderLabel}
+              </span>
+            ) : null}
+          </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <VerificationBadges compact verification={profile.verification} />
             {profile.isPremium ? <PremiumBadge compact label="Tribe Plus" /> : null}
@@ -743,120 +763,21 @@ function SelectedProfilePanel({
         </div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-[#34443a]">{profile.bio}</p>
-
       <div className="mt-4 rounded-md border border-[#e2e6dc] bg-white p-3">
         <p className="text-sm font-semibold text-[#607265]">
-          Personality summary
+          {getMatchLabel(profile.match)}
         </p>
         <p className="mt-1 text-sm leading-6 text-[#34443a]">
-          {profile.temperament}. {profile.archetype} with a {profile.pace.toLowerCase()} rhythm.
+          {profile.personalitySummary}
         </p>
       </div>
-
-      {profile.photos.length > 1 ? (
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {profile.photos.slice(0, 3).map((photo, index) => (
-            <ProfilePhotoGallery
-              initialIndex={index}
-              key={`${photo}-${index}`}
-              label={`View ${profile.name} profile photo ${index + 1}`}
-              photos={profile.photos}
-            >
-              <Image
-                alt={`${profile.name} profile photo ${index + 1}`}
-                className="aspect-square rounded-md object-cover"
-                height={96}
-                src={photo}
-                width={96}
-              />
-            </ProfilePhotoGallery>
-          ))}
-        </div>
-      ) : null}
 
       <div className="mt-5">
         <p className="text-sm font-semibold text-[#607265]">
-          Shared interests
+          Why you may connect
         </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(profile.sharedInterests.length
-            ? profile.sharedInterests
-            : ["Still discovering overlap"]
-          ).slice(0, 6).map((value) => (
-            <span
-              key={value}
-              className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
-            >
-              {value}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Shared goals</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {profile.sharedGoals.slice(0, 4).map((value) => (
-            <span
-              key={value}
-              className="rounded-md bg-[#17251f] px-2.5 py-1 text-xs font-semibold text-white"
-            >
-              {value}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Languages</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(profile.languages.length ? profile.languages : ["Optional"]).map(
-            (value) => (
-              <span
-                key={value}
-                className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-[#34443a]"
-              >
-                {value}
-              </span>
-            ),
-          )}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Verification</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <VerificationBadges verification={profile.verification} />
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Circle overlap</p>
         <div className="mt-3 space-y-2">
-          {profile.circles.map((circle, index) => {
-            const Icon = circleIcons[index] ?? Users;
-
-            return (
-              <div
-                key={circle}
-                className="flex min-h-10 items-center justify-between border-b border-[#e2e6dc] pb-2 text-sm last:border-b-0 last:pb-0"
-              >
-                <span className="flex items-center gap-2">
-                  <Icon size={16} />
-                  {circle}
-                </span>
-                <ShieldCheck size={16} className="text-[#587d62]" />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">Why this match</p>
-        <div className="mt-3 space-y-2">
-          {profile.reasons.slice(0, 4).map((reason) => (
+          {profile.reasons.slice(0, 2).map((reason) => (
             <p
               className="flex gap-2 rounded-md border border-[#e2e6dc] bg-white px-3 py-2 text-sm leading-5 text-[#34443a]"
               key={reason}
@@ -865,157 +786,6 @@ function SelectedProfilePanel({
               {reason}
             </p>
           ))}
-        </div>
-      </div>
-
-      <details className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-[#607265]">
-          See full compatibility breakdown
-        </summary>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 border-y border-[#e2e6dc] py-4">
-          <div>
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-              <Sparkles size={14} />
-              Pace
-            </p>
-            <p className="mt-1 text-sm font-semibold">{profile.pace}</p>
-          </div>
-          <div>
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase text-[#607265]">
-              <CalendarDays size={14} />
-              Open
-            </p>
-            <p className="mt-1 text-sm font-semibold">{profile.availability}</p>
-          </div>
-          <div className="col-span-2">
-            <p className="text-xs font-semibold uppercase text-[#607265]">
-              Profile quality
-            </p>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="h-2 flex-1 rounded-md bg-[#e2e6dc]">
-                <div
-                  className="h-2 rounded-md bg-[#17251f]"
-                  style={{ width: `${profile.profileCompleteness}%` }}
-                />
-              </div>
-              <span className="text-sm font-semibold">
-                {profile.profileCompleteness}%
-              </span>
-            </div>
-          </div>
-          <div className="col-span-2">
-            <p className="text-xs font-semibold uppercase text-[#607265]">
-              Detailed match score
-            </p>
-            <p className="mt-1 text-sm font-semibold">
-              {profile.match}% / {getMatchLabel(profile.match)}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {axisMetrics.map((metric) => {
-            const Icon = metric.icon;
-            const value = profile.axes[metric.key];
-
-            return (
-              <div key={metric.label}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2 font-semibold">
-                    <Icon size={15} />
-                    {metric.label}
-                  </span>
-                  <span>{value}%</span>
-                </div>
-                <div className="mt-2 h-2 rounded-md bg-[#e2e6dc]">
-                  <div
-                    className="h-2 rounded-md bg-[#17251f]"
-                    style={{ width: `${value}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-5">
-          <p className="text-sm font-semibold text-[#607265]">
-            Match score breakdown
-          </p>
-          <div className="mt-3 space-y-2">
-            {scoreBreakdownMetrics.map((metric) => {
-              const value = profile.scoreBreakdown[metric.key];
-
-              return (
-                <div key={metric.key}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-semibold">{metric.label}</span>
-                    <span>{value}%</span>
-                  </div>
-                  <div className="mt-1 h-2 rounded-md bg-[#e2e6dc]">
-                    <div
-                      className="h-2 rounded-md bg-[#f6c66f]"
-                      style={{ width: `${value}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </details>
-
-      {profile.profilePrompts.length ? (
-        <div className="mt-5">
-          <p className="text-sm font-semibold text-[#607265]">
-            Profile prompts
-          </p>
-          <div className="mt-3 space-y-2">
-            {profile.profilePrompts.map((prompt) => (
-              <div
-                className="rounded-md border border-[#e2e6dc] bg-white px-3 py-2"
-                key={prompt.prompt}
-              >
-                <p className="text-xs font-semibold uppercase text-[#607265]">
-                  {prompt.prompt}
-                </p>
-                <p className="mt-1 text-sm leading-5 text-[#34443a]">
-                  {prompt.answer}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {profile.voiceIntroUrl ? (
-        <div className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-3">
-          <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-            <Mic size={15} />
-            Voice intro
-            {profile.voiceIntroDurationSeconds
-              ? `, ${profile.voiceIntroDurationSeconds}s`
-              : ""}
-          </p>
-          <div className="mt-3">
-            <VoiceIntroPlayer
-              durationSeconds={profile.voiceIntroDurationSeconds}
-              label={`${profile.name} voice intro`}
-              src={profile.voiceIntroUrl}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-5">
-        <p className="text-sm font-semibold text-[#607265]">
-          Conversation opener for {activeFocus.toLowerCase()}
-        </p>
-        <div className="mt-2 rounded-md border border-[#d8ded1] bg-white p-3">
-          <p className="text-sm leading-6 text-[#34443a]">
-            {profile.prompts[promptIndex] ?? profile.prompts[0]}
-          </p>
         </div>
       </div>
 
@@ -1042,7 +812,7 @@ function SelectedProfilePanel({
         </button>
         <Link
           className="flex h-11 items-center justify-center gap-1 rounded-md border border-[#cbd4c6] bg-white text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-          href={`/profiles/${profile.id}`}
+          href={`/profiles/${profile.id}?from=people`}
           aria-label={`View ${profile.name}`}
         >
           <Eye size={17} />
@@ -1060,6 +830,139 @@ function SelectedProfilePanel({
           ) : (
             <X size={17} />
           )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PeopleFilterPanel({
+  draft,
+  onApply,
+  onChange,
+  onReset,
+}: {
+  draft: DiscoveryFilters;
+  onApply: () => void;
+  onChange: (filters: DiscoveryFilters) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+            <SlidersHorizontal size={16} />
+            People filters
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[#34443a]">
+            Basic filters affect People only. Community spaces remain open to
+            everyone.
+          </p>
+        </div>
+        <span className="w-fit rounded-md bg-[#eef7f1] px-2 py-1 text-xs font-bold uppercase text-[#176b57]">
+          Free basics
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <label className="block">
+          <span className="text-sm font-semibold text-[#34443a]">Gender</span>
+          <select
+            aria-label="Filter People by gender"
+            className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
+            onChange={(event) =>
+              onChange({
+                ...draft,
+                gender: event.target.value as DiscoveryFilters["gender"],
+              })
+            }
+            value={draft.gender}
+          >
+            <option value="all">Any gender</option>
+            {genderOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-[#34443a]">
+            Minimum age
+          </span>
+          <input
+            aria-label="Minimum age"
+            className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
+            inputMode="numeric"
+            max={120}
+            min={18}
+            onChange={(event) =>
+              onChange({ ...draft, minAge: event.target.value })
+            }
+            placeholder="18"
+            type="number"
+            value={draft.minAge}
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-[#34443a]">
+            Maximum age
+          </span>
+          <input
+            aria-label="Maximum age"
+            className="mt-2 h-11 w-full rounded-md border border-[#cbd4c6] bg-white px-3 text-sm text-[#17201b] outline-none transition focus:border-[#17251f]"
+            inputMode="numeric"
+            max={120}
+            min={18}
+            onChange={(event) =>
+              onChange({ ...draft, maxAge: event.target.value })
+            }
+            placeholder="35"
+            type="number"
+            value={draft.maxAge}
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3">
+        <p className="text-sm font-semibold text-[#607265]">
+          Advanced filters
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {advancedFilterLabels.map((label) => (
+            <button
+              aria-label={`${label} filter locked for Tribe Plus`}
+              className="flex h-10 items-center justify-between rounded-md border border-[#d8ded1] bg-white px-3 text-sm font-semibold text-[#7c8b80] opacity-75"
+              disabled
+              key={label}
+              type="button"
+            >
+              {label}
+              <span className="rounded-md bg-[#f6c66f] px-2 py-0.5 text-[11px] font-bold uppercase text-[#17201b]">
+                Premium
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button
+          className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+          onClick={onReset}
+          type="button"
+        >
+          Reset
+        </button>
+        <button
+          className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+          onClick={onApply}
+          type="button"
+        >
+          Apply filters
         </button>
       </div>
     </div>

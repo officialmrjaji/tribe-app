@@ -283,8 +283,8 @@ function NotificationsEmptyState() {
         Important activity will stay easy to review.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Likes, mutual likes, conversation starts, and new messages will appear
-        here. Push and email notifications are intentionally off in this build.
+        Likes, mutual likes, mentions, comments, replies, and important account
+        updates will appear here. New messages stay inside Chats.
       </p>
       <Link
         className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
@@ -301,12 +301,8 @@ function getNotificationCategory(type: NotificationRecord["type"]) {
     return "Like";
   }
 
-  if (type === "mutual_save" || type === "conversation_created") {
+  if (type === "mutual_save") {
     return "Match";
-  }
-
-  if (type === "new_message") {
-    return "Message";
   }
 
   if (type === "square_comment") {
@@ -319,6 +315,14 @@ function getNotificationCategory(type: NotificationRecord["type"]) {
 
   if (type === "square_mention") {
     return "Mention";
+  }
+
+  if (type === "system_announcement" || type === "feature_update") {
+    return "Update";
+  }
+
+  if (type === "account_security") {
+    return "Account";
   }
 
   return "Square";

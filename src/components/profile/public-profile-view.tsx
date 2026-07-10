@@ -10,6 +10,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import { PublicProfileActions } from "@/components/profile/public-profile-actions";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
@@ -75,10 +76,17 @@ export function PublicProfileView({
                   {profile.displayName}
                   {profile.age ? `, ${profile.age}` : ""}
                 </h1>
-                <p className="mt-2 flex items-center gap-2 text-sm text-[#607265]">
-                  <MapPin size={15} />
-                  {profile.city}
-                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#607265]">
+                  <span className="inline-flex items-center gap-2">
+                    <MapPin size={15} />
+                    {profile.city}
+                  </span>
+                  {profile.genderLabel ? (
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#607265]">
+                      {profile.genderLabel}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <VerificationBadges verification={profile.verification} />
                   {profile.isPremium ? <PremiumBadge label="Tribe Plus" /> : null}
@@ -102,6 +110,15 @@ export function PublicProfileView({
             ) : null}
           </div>
         </header>
+
+        {!profile.isOwnProfile ? (
+          <div className="mt-6">
+            <PublicProfileActions
+              profileId={profile.id}
+              profileName={profile.displayName}
+            />
+          </div>
+        ) : null}
 
         <section className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
