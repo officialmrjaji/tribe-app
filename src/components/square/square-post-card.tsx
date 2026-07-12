@@ -17,10 +17,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useRef, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import type { SquareComment, SquarePost } from "@/lib/square/service";
 import { squarePostTypeLabels } from "@/lib/square/schema";
@@ -685,7 +685,7 @@ export function SquarePostCard({
       <div className="p-4">
         <div className="flex items-start gap-3">
           {currentPost.author.avatarUrl ? (
-            <Image
+            <SafeStorageImage
               alt={`${currentPost.author.name} avatar`}
               className="h-11 w-11 rounded-md object-cover"
               height={44}
@@ -849,7 +849,7 @@ export function SquarePostCard({
                   label="Open Square photo"
                   photos={[currentPost.imageUrl]}
                 >
-                  <Image
+                  <SafeStorageImage
                     alt={currentPost.caption ?? "Square photo"}
                     className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
                     height={520}
@@ -1122,7 +1122,7 @@ function CommentItem({
     >
       <div className="flex items-start gap-3">
         {comment.author.avatarUrl ? (
-          <Image
+          <SafeStorageImage
             alt={`${comment.author.name} avatar`}
             className="h-8 w-8 rounded-md object-cover"
             height={32}

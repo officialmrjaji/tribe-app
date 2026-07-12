@@ -6,9 +6,9 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { PublicProfileActions } from "@/components/profile/public-profile-actions";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
@@ -53,7 +53,7 @@ export function PublicProfileView({
                   label={`${profile.displayName} profile photos`}
                   photos={photoUrls}
                 >
-                  <Image
+                  <SafeStorageImage
                     alt={`${profile.displayName} profile photo`}
                     className="h-32 w-32 rounded-md object-cover"
                     height={128}
@@ -138,7 +138,7 @@ export function PublicProfileView({
                       label={`${profile.displayName} profile photo ${index + 1}`}
                       photos={photoUrls}
                     >
-                      <Image
+                      <SafeStorageImage
                         alt={`${profile.displayName} profile photo ${index + 1}`}
                         className="aspect-square rounded-md object-cover"
                         height={220}

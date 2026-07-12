@@ -8,7 +8,6 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -16,6 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 
 type ProfilePhotoGalleryProps = {
   children: ReactNode;
@@ -188,7 +188,7 @@ export function ProfilePhotoGallery({
                   : "relative h-full max-h-[78vh] w-full max-w-5xl"
               }
             >
-              <Image
+              <SafeStorageImage
                 alt={label}
                 className="object-contain"
                 fill

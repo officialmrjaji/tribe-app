@@ -14,8 +14,12 @@ This pass refined People discovery, identity display/locking, full-profile disco
 - `src/app/page.tsx`
 - `src/app/profile/edit/profile-editor.tsx`
 - `src/app/profiles/[profileId]/page.tsx`
+- `src/components/media/safe-storage-image.tsx`
 - `src/components/profile/public-profile-actions.tsx`
+- `src/components/profile/profile-photo-gallery.tsx`
+- `src/components/profile/profile-photo-manager.tsx`
 - `src/components/profile/public-profile-view.tsx`
+- `src/components/discovery/profile-collection-grid.tsx`
 - `src/components/square/square-post-card.tsx`
 - `src/lib/discovery/schema.ts`
 - `src/lib/discovery/service.ts`
@@ -114,6 +118,16 @@ Apply this migration before testing the branch in a deployed preview.
 - Comment threads have clearer top-level comment cards and nested reply grouping.
 - Square media viewer behavior is preserved.
 
+## Profile Image Delivery Fix
+
+- Investigated failing `/_next/image` responses for Supabase-hosted profile media.
+- Confirmed `profile_photos` rows and `profile-media` storage objects were present and direct public Storage URLs returned image responses.
+- Next development logs showed the image optimizer rejecting valid Supabase Storage URLs because the upstream host resolved through IPv6/NAT64 addresses classified as private by the optimizer.
+- Added a shared safe Storage image component that bypasses Next image optimization for Supabase Storage URLs while keeping normal image rendering for other sources.
+- Added graceful fallback UI for unavailable profile, avatar, gallery, and Square media images.
+- No storage bucket policy was changed.
+- No database cleanup is required for the tested records because the objects and paths are valid.
+
 ## Security and Privacy Notes
 
 - No client-submitted user IDs are trusted.
@@ -182,3 +196,4 @@ Two-user checks:
 
 - `npm run lint` passed.
 - `npm run build` passed.
+- Profile image delivery fix verified with `npm.cmd run lint` and `npm.cmd run build`.

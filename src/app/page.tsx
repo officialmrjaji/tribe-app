@@ -13,10 +13,10 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
@@ -554,7 +554,7 @@ export default function Home() {
                             profile.photos.length ? profile.photos : [profile.image]
                           }
                         >
-                          <Image
+                          <SafeStorageImage
                             alt={`${profile.name} avatar`}
                             className="h-20 w-20 shrink-0 rounded-md object-cover"
                             height={80}
@@ -729,7 +729,7 @@ function SelectedProfilePanel({
           label={`View ${profile.name}'s profile photos`}
           photos={profile.photos.length ? profile.photos : [profile.image]}
         >
-          <Image
+          <SafeStorageImage
             alt={`${profile.name} avatar`}
             className="h-20 w-20 rounded-md object-cover"
             height={80}

@@ -9,8 +9,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import Image from "next/image";
 import { useMemo, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import type { ProfileQualitySnapshot } from "@/lib/profile/service";
 
 const maximumPhotoCount = 6;
@@ -228,7 +228,7 @@ export function ProfilePhotoManager({
                 className="relative overflow-hidden rounded-md border border-[#d8ded1] bg-[#fbfaf4]"
                 key={photo.id}
               >
-                <Image
+                <SafeStorageImage
                   alt={photo.alt_text ?? `Profile photo ${index + 1}`}
                   className="aspect-square w-full object-cover"
                   height={180}
