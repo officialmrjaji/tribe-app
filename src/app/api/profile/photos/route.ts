@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import {
   ProfileMediaUploadError,
+  reorderProfilePhotos,
   uploadProfilePhotos,
 } from "@/lib/profile/service";
+
+const reorderPhotosSchema = z.object({
+  photoIds: z.array(z.string().uuid()).min(1).max(6),
+});
 
 function isUploadedFile(value: FormDataEntryValue): value is File {
   return (
@@ -67,6 +73,52 @@ export async function POST(request: Request) {
         error:
           "Unable to upload profile photos. Check profile media storage and try again.",
       },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await getCurrentOwnedProfile();
+
+    if ("error" in session) {
+      return NextResponse.json(
+        { error: session.error },
+        { status: session.status },
+      );
+    }
+
+    const parsedPayload = reorderPhotosSchema.safeParse(
+      await request.json().catch(() => ({})),
+    );
+
+    if (!parsedPayload.success) {
+      return NextResponse.json(
+        {
+          error: "Choose a valid order for your profile photos.",
+          issues: parsedPayload.error.issues,
+        },
+        { status: 400 },
+      );
+    }
+
+    const quality = await reorderProfilePhotos({
+      ownedProfile: session.ownedProfile,
+      photoIds: parsedPayload.data.photoIds,
+    });
+
+    return NextResponse.json(quality);
+  } catch (error) {
+    if (error instanceof ProfileMediaUploadError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
+    return NextResponse.json(
+      { error: "Profile photo order could not be saved." },
       { status: 500 },
     );
   }

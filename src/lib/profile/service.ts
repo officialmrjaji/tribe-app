@@ -1,11 +1,14 @@
 import type { User } from "@clerk/nextjs/server";
 import { trackAnalyticsEvent } from "@/lib/analytics/service";
+import type { Gender } from "@/lib/onboarding/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { ProfileInput } from "./schema";
 
 const profileMediaBucket = "profile-media";
 const profileMediaMaxBytes = 10 * 1024 * 1024;
 export const minimumDiscoveryPhotoCount = 3;
+export const minimumBasicProfileCompletion = 50;
+export const recommendedProfileCompletion = 80;
 export const profilePhotoRequirementMessage =
   "Upload at least 3 real profile photos to unlock People.";
 const profilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -67,6 +70,18 @@ export class ProfileQualityRequirementError extends Error {
   }
 }
 
+export class ProfileIdentityLockedError extends Error {
+  status: number;
+
+  constructor() {
+    super(
+      "Display name, gender, and date of birth are fixed after onboarding. Contact support if one needs a correction.",
+    );
+    this.name = "ProfileIdentityLockedError";
+    this.status = 403;
+  }
+}
+
 type UserAccount = {
   banned_at?: string | null;
   clerk_user_id: string;
@@ -94,6 +109,7 @@ type ProfileRecord = {
   discoverable: boolean;
   display_name: string | null;
   email_verified_at: string | null;
+  gender: Gender | null;
   identity_verified_at: string | null;
   id: string;
   onboarding_completed_at: string | null;
@@ -353,9 +369,14 @@ export async function getProfileQuality(
     await updateProfileCompletion(ownedProfile.profile.id, quality.completeness);
     await trackAnalyticsEvent({
       eventType:
-        quality.completeness >= 80 &&
-        ownedProfile.profile.profile_completion_score < 80
+        quality.completeness >= recommendedProfileCompletion &&
+        ownedProfile.profile.profile_completion_score <
+          recommendedProfileCompletion
           ? "profile_completed"
+          : quality.completeness >= minimumBasicProfileCompletion &&
+              ownedProfile.profile.profile_completion_score <
+                minimumBasicProfileCompletion
+            ? "profile_basic_ready"
           : "profile_completion_changed",
       ownedProfile,
       properties: {
@@ -552,7 +573,7 @@ export async function uploadProfilePhotos(
     insertedPhotos.push(photo as ProfilePhoto);
   }
 
-  if (!ownedProfile.profile.avatar_url && insertedPhotos[0]) {
+  if (existingPhotos.length === 0 && insertedPhotos[0]) {
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -570,6 +591,148 @@ export async function uploadProfilePhotos(
       );
     }
   }
+
+  return refreshProfileQuality(ownedProfile);
+}
+
+export async function replaceProfilePhoto({
+  file,
+  ownedProfile,
+  photoId,
+}: {
+  file: File;
+  ownedProfile: OwnedProfile;
+  photoId: string;
+}) {
+  validateProfilePhotoFile(file);
+
+  const supabase = createSupabaseAdminClient();
+  await ensureProfileMediaBucket(supabase);
+
+  const existingPhoto = await getOwnedProfilePhoto(
+    supabase,
+    ownedProfile.profile.id,
+    photoId,
+  );
+  const { publicUrl, storagePath } = await uploadProfileMediaObject({
+    file,
+    kind: "photos",
+    ownedProfile,
+    supabase,
+  });
+  const { error } = await supabase
+    .from("profile_photos")
+    .update({
+      image_url: publicUrl,
+      storage_path: storagePath,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", photoId)
+    .eq("profile_id", ownedProfile.profile.id);
+
+  if (error) {
+    await removeProfileMediaObjects(supabase, [storagePath]);
+    throw new ProfileMediaUploadError(
+      `The replacement photo could not be saved: ${getServiceErrorMessage(error)}`,
+      500,
+    );
+  }
+
+  if (existingPhoto.storage_path) {
+    await removeProfileMediaObjectsBestEffort(supabase, [
+      existingPhoto.storage_path,
+    ]);
+  }
+
+  const refreshedPhotos = await getProfilePhotos(ownedProfile.profile.id);
+  await persistProfilePhotoOrder({
+    orderedPhotos: refreshedPhotos,
+    profileId: ownedProfile.profile.id,
+    supabase,
+  });
+
+  return refreshProfileQuality(ownedProfile);
+}
+
+export async function deleteProfilePhoto({
+  ownedProfile,
+  photoId,
+}: {
+  ownedProfile: OwnedProfile;
+  photoId: string;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const existingPhoto = await getOwnedProfilePhoto(
+    supabase,
+    ownedProfile.profile.id,
+    photoId,
+  );
+  const { error } = await supabase
+    .from("profile_photos")
+    .delete()
+    .eq("id", photoId)
+    .eq("profile_id", ownedProfile.profile.id);
+
+  if (error) {
+    throw new ProfileMediaUploadError(
+      `The profile photo could not be deleted: ${getServiceErrorMessage(error)}`,
+      500,
+    );
+  }
+
+  if (existingPhoto.storage_path) {
+    await removeProfileMediaObjectsBestEffort(supabase, [
+      existingPhoto.storage_path,
+    ]);
+  }
+
+  const remainingPhotos = await getProfilePhotos(ownedProfile.profile.id);
+  await persistProfilePhotoOrder({
+    orderedPhotos: remainingPhotos,
+    profileId: ownedProfile.profile.id,
+    supabase,
+  });
+
+  return refreshProfileQuality(ownedProfile);
+}
+
+export async function reorderProfilePhotos({
+  ownedProfile,
+  photoIds,
+}: {
+  ownedProfile: OwnedProfile;
+  photoIds: string[];
+}) {
+  const supabase = createSupabaseAdminClient();
+  const existingPhotos = await getProfilePhotos(ownedProfile.profile.id);
+  const existingIds = new Set(existingPhotos.map((photo) => photo.id));
+
+  if (
+    photoIds.length !== existingPhotos.length ||
+    new Set(photoIds).size !== photoIds.length ||
+    photoIds.some((photoId) => !existingIds.has(photoId))
+  ) {
+    throw new ProfileMediaUploadError(
+      "Photo order must include each of your profile photos exactly once.",
+    );
+  }
+
+  const photoById = new Map(
+    existingPhotos.map((photo) => [photo.id, photo] as const),
+  );
+  const orderedPhotos = photoIds.map((photoId) => photoById.get(photoId)!);
+
+  if (orderedPhotos[0] && !isRealProfilePhoto(orderedPhotos[0])) {
+    throw new ProfileMediaUploadError(
+      "A real profile photo must remain first. Illustrated media is supplementary.",
+    );
+  }
+
+  await persistProfilePhotoOrder({
+    orderedPhotos,
+    profileId: ownedProfile.profile.id,
+    supabase,
+  });
 
   return refreshProfileQuality(ownedProfile);
 }
@@ -634,6 +797,100 @@ export async function uploadVoiceIntroduction({
   });
 }
 
+async function getOwnedProfilePhoto(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  profileId: string,
+  photoId: string,
+) {
+  const { data, error } = await supabase
+    .from("profile_photos")
+    .select("*")
+    .eq("id", photoId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new ProfileMediaUploadError("Profile photo not found.", 404);
+  }
+
+  return data as ProfilePhoto;
+}
+
+async function persistProfilePhotoOrder({
+  orderedPhotos,
+  profileId,
+  supabase,
+}: {
+  orderedPhotos: ProfilePhoto[];
+  profileId: string;
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+}) {
+  const primaryPhoto = orderedPhotos.find(isRealProfilePhoto) ?? null;
+  const { error: clearPrimaryError } = await supabase
+    .from("profile_photos")
+    .update({ is_primary: false })
+    .eq("profile_id", profileId);
+
+  if (clearPrimaryError) {
+    throw clearPrimaryError;
+  }
+
+  for (const [index, photo] of orderedPhotos.entries()) {
+    const { error } = await supabase
+      .from("profile_photos")
+      .update({
+        is_primary: photo.id === primaryPhoto?.id,
+        sort_order: index,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", photo.id)
+      .eq("profile_id", profileId);
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  await updatePrimaryProfileImage(
+    supabase,
+    profileId,
+    primaryPhoto?.image_url ?? null,
+  );
+}
+
+async function updatePrimaryProfileImage(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  profileId: string,
+  avatarUrl: string | null,
+) {
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      avatar_url: avatarUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", profileId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function removeProfileMediaObjectsBestEffort(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  paths: string[],
+) {
+  try {
+    await removeProfileMediaObjects(supabase, paths);
+  } catch {
+    // The database remains authoritative; orphan cleanup can be retried later.
+  }
+}
+
 export async function updateOwnedProfile(
   clerkUserId: string,
   input: ProfileInput,
@@ -644,15 +901,15 @@ export async function updateOwnedProfile(
     return null;
   }
 
+  assertEditableIdentityFields(ownedProfile.profile, input);
+
   const updates = {
     archetype: input.archetype,
     avatar_url: input.avatarUrl,
     bio: input.bio,
-    birthdate: input.birthdate,
     city: input.city,
     country: input.country,
     discoverable: input.discoverable,
-    display_name: input.displayName,
     region: input.region,
     social_pace: input.socialPace,
     temperament_summary: input.temperamentSummary,
@@ -689,6 +946,38 @@ export async function updateOwnedProfile(
       profile_completion_score: quality.completeness,
     },
   };
+}
+
+function assertEditableIdentityFields(
+  profile: ProfileRecord,
+  input: ProfileInput,
+) {
+  if (!profile.onboarding_completed_at) {
+    return;
+  }
+
+  const changesLockedIdentity =
+    changedLockedValue(profile.display_name, input.displayName) ||
+    changedLockedValue(profile.gender, input.gender) ||
+    changedLockedValue(profile.birthdate, input.birthdate);
+
+  if (changesLockedIdentity) {
+    throw new ProfileIdentityLockedError();
+  }
+}
+
+function changedLockedValue(
+  currentValue: string | null,
+  nextValue: string | null | undefined,
+) {
+  if (nextValue === undefined) {
+    return false;
+  }
+
+  const current = currentValue?.trim() ?? "";
+  const next = nextValue?.trim() ?? "";
+
+  return current.length > 0 && current !== next;
 }
 
 async function refreshProfileQuality(ownedProfile: OwnedProfile) {
@@ -922,7 +1211,7 @@ function buildProfileQuality(
     {
       complete: Boolean(profile.bio && profile.bio.length >= 40),
       label: "Bio with enough context",
-      points: 15,
+      points: 10,
     },
     {
       complete: Boolean(profile.city && profile.country),
@@ -937,17 +1226,17 @@ function buildProfileQuality(
     {
       complete: Boolean(profile.onboarding_completed_at),
       label: "Personality onboarding",
-      points: 15,
+      points: 20,
     },
     {
       complete: hasMinimumPhotos,
       label: profilePhotoRequirementMessage,
-      points: 15,
+      points: 25,
     },
     {
       complete: completedPrompts.length >= 2,
       label: "Profile prompts",
-      points: 15,
+      points: 10,
     },
     {
       complete: Boolean(
@@ -957,7 +1246,7 @@ function buildProfileQuality(
           profile.voice_intro_duration_seconds <= 60,
       ),
       label: "Voice intro",
-      points: 10,
+      points: 5,
     },
     {
       complete: profile.discoverable && profile.visibility !== "private",
@@ -972,13 +1261,9 @@ function buildProfileQuality(
       0,
     ),
   );
-  const completeness = hasMinimumPhotos
-    ? rawCompleteness
-    : Math.min(rawCompleteness, 79);
-
   return {
     checklist,
-    completeness,
+    completeness: rawCompleteness,
     hasMinimumPhotos,
     minimumPhotoCount: minimumDiscoveryPhotoCount,
     photos,

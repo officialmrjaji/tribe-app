@@ -11,10 +11,10 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import { PremiumBadge } from "@/components/premium/premium-badge";
 import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import { VerificationBadges } from "@/components/profile/verification-badges";
@@ -180,7 +180,7 @@ export function ProfileCollectionGrid({
                   label={`View ${profile.name}'s profile photo`}
                   photos={[profile.image]}
                 >
-                  <Image
+                  <SafeStorageImage
                     alt={`${profile.name} avatar`}
                     className="h-16 w-16 shrink-0 rounded-md object-cover"
                     height={64}

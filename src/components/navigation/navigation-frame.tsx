@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { NotificationBadge } from "@/components/notifications/notification-badge";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type ConversationsPayload = {
   conversations?: Array<{
@@ -223,40 +224,41 @@ function MobileNavigationLink({
 function useChatUnreadCount() {
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadUnreadChats = useCallback(async () => {
+    try {
+      const response = await fetch("/api/conversations", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | ConversationsPayload
+        | null;
 
-    async function loadUnreadChats() {
-      try {
-        const response = await fetch("/api/conversations", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | ConversationsPayload
-          | null;
+      if (response.ok) {
+        const nextCount = (payload?.conversations ?? []).reduce(
+          (total, conversation) => total + (conversation.unreadCount ?? 0),
+          0,
+        );
 
-        if (isMounted && response.ok) {
-          const nextCount = (payload?.conversations ?? []).reduce(
-            (total, conversation) => total + (conversation.unreadCount ?? 0),
-            0,
-          );
-
-          setUnreadCount(nextCount);
-        }
-      } catch {
-        if (isMounted) {
-          setUnreadCount(0);
-        }
+        setUnreadCount(nextCount);
       }
+    } catch {
+      // Keep the last known count; the fallback will retry.
     }
-
-    loadUnreadChats();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadUnreadChats();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadUnreadChats]);
+
+  useRealtimeInvalidation({
+    events: ["connections", "messages"],
+    onInvalidate: loadUnreadChats,
+  });
 
   return unreadCount;
 }

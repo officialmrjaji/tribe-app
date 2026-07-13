@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { trackAnalyticsEvent } from "@/lib/analytics/service";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
+import { discoveryFiltersSchema } from "@/lib/discovery/schema";
 import { getDiscoveryRecommendations } from "@/lib/discovery/service";
 import { getOnboardingStatus } from "@/lib/onboarding/service";
 import {
   getProfileQuality,
+  minimumBasicProfileCompletion,
   profilePhotoRequirementMessage,
 } from "@/lib/profile/service";
 
@@ -17,7 +19,7 @@ function jsonError(error: unknown) {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await getCurrentOwnedProfile();
 
@@ -57,11 +59,11 @@ export async function GET() {
       );
     }
 
-    if (quality.completeness < 80) {
+    if (quality.completeness < minimumBasicProfileCompletion) {
       return NextResponse.json(
         {
           completed: false,
-          error: "Profile completion required",
+          error: `Complete at least ${minimumBasicProfileCompletion}% of your profile to open People.`,
           profileCompleteness: quality.completeness,
           redirectTo: "/profile/edit",
         },
@@ -69,7 +71,27 @@ export async function GET() {
       );
     }
 
-    const discovery = await getDiscoveryRecommendations(session.ownedProfile);
+    const url = new URL(request.url);
+    const parsedFilters = discoveryFiltersSchema.safeParse({
+      gender: url.searchParams.get("gender") || undefined,
+      maxAge: url.searchParams.get("maxAge") || undefined,
+      minAge: url.searchParams.get("minAge") || undefined,
+    });
+
+    if (!parsedFilters.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid discovery filters.",
+          issues: parsedFilters.error.issues,
+        },
+        { status: 400 },
+      );
+    }
+
+    const discovery = await getDiscoveryRecommendations(
+      session.ownedProfile,
+      parsedFilters.data,
+    );
     await trackAnalyticsEvent({
       eventType: "discovery_impression",
       ownedProfile: session.ownedProfile,

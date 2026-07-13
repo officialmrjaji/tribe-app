@@ -14,6 +14,7 @@ export type AnalyticsEventType =
   | "monthly_active_user"
   | "premium_conversion"
   | "profile_completed"
+  | "profile_basic_ready"
   | "profile_completion_changed"
   | "profile_saved"
   | "session_ended"

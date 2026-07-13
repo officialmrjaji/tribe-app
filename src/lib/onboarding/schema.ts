@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   availabilityValues,
   conversationStyleValues,
+  genderValues,
   intentValues,
   interestValues,
   lifestyleSignalValues,
@@ -11,6 +12,7 @@ import {
 export const onboardingInputSchema = z.object({
   availability: z.enum(availabilityValues),
   conversationStyle: z.enum(conversationStyleValues),
+  gender: z.enum(genderValues).optional(),
   intent: z.enum(intentValues),
   interests: z.array(z.enum(interestValues)).min(3).max(12),
   lifestyleSignals: z.array(z.enum(lifestyleSignalValues)).min(2).max(8),

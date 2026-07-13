@@ -5,6 +5,7 @@ import {
   getOwnedProfile,
   getPrimaryEmail,
   getPrimaryEmailVerified,
+  ProfileIdentityLockedError,
   getProfileQuality,
   updateOwnedProfile,
 } from "@/lib/profile/service";
@@ -76,7 +77,20 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const ownedProfile = await updateOwnedProfile(userId, parsedPayload.data);
+  let ownedProfile;
+
+  try {
+    ownedProfile = await updateOwnedProfile(userId, parsedPayload.data);
+  } catch (error) {
+    if (error instanceof ProfileIdentityLockedError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
+    throw error;
+  }
 
   if (!ownedProfile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });

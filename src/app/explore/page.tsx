@@ -12,6 +12,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ProfileCollectionGrid } from "@/components/discovery/profile-collection-grid";
 import { PremiumBadge } from "@/components/premium/premium-badge";
+import { RealtimePageRefresh } from "@/components/realtime/realtime-page-refresh";
 import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import {
   getInboundLikedDiscoveryProfiles,
@@ -111,6 +112,7 @@ export default async function ExplorePage({
 
   return (
     <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
+      <RealtimePageRefresh events={["connections"]} />
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 lg:flex-row lg:items-center lg:justify-between">
           <div>

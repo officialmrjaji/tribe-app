@@ -1,10 +1,12 @@
 import {
   availabilityLabels,
   conversationStyleLabels,
+  genderLabels,
   intentLabels,
   interestLabels,
   lifestyleSignalLabels,
   personalityTypeLabels,
+  type Gender,
   type Interest,
   type LifestyleSignal,
 } from "@/lib/onboarding/options";
@@ -14,12 +16,15 @@ import {
   type OnboardingRecord,
 } from "@/lib/onboarding/service";
 import { trackAnalyticsEvent } from "@/lib/analytics/service";
+import type { DiscoveryFiltersInput } from "@/lib/discovery/schema";
+import { createConversation } from "@/lib/messaging/service";
 import { createNotification } from "@/lib/notifications/service";
 import {
   assertOwnedProfileHasMinimumPhotos,
   assertProfileHasMinimumPhotos,
   getProfileVerification,
   isRealProfilePhoto,
+  minimumBasicProfileCompletion,
   minimumDiscoveryPhotoCount,
   type ProfileVerification,
   type OwnedProfile,
@@ -37,6 +42,7 @@ type ProfileRow = {
   discoverable: boolean;
   display_name: string | null;
   email_verified_at: string | null;
+  gender: Gender | null;
   has_active_boost?: boolean;
   id: string;
   identity_verified_at: string | null;
@@ -60,6 +66,10 @@ type ProfileRow = {
 type InteractionProfile = {
   id: string;
   user_id: string;
+};
+
+type SavedProfileReference = InteractionProfile & {
+  rediscover_after: string | null;
 };
 
 type ProfileReference = {
@@ -117,6 +127,8 @@ export type DiscoveryProfile = {
   bio: string;
   circles: string[];
   city: string;
+  gender: Gender | null;
+  genderLabel: string | null;
   id: string;
   image: string;
   hasActiveBoost: boolean;
@@ -190,9 +202,11 @@ const fallbackAvatars = [
 ] as const;
 
 const algorithmVersion = "phase3_v1";
+const defaultRediscoveryDays = 90;
 
 export async function getDiscoveryRecommendations(
   ownedProfile: OwnedProfile,
+  filters: DiscoveryFiltersInput = {},
 ): Promise<DiscoveryResult> {
   const onboarding = await getOnboardingStatus(ownedProfile.profile.id);
 
@@ -223,8 +237,14 @@ export async function getDiscoveryRecommendations(
     fetchCandidateProfiles(ownedProfile),
   ]);
 
+  const now = new Date();
   const savedProfileIds = savedProfiles.map((profile) => profile.id);
   const savedProfileIdSet = new Set(savedProfileIds);
+  const hiddenSavedProfileIds = new Set(
+    savedProfiles
+      .filter((profile) => isRediscoveryActive(profile.rediscover_after, now))
+      .map((profile) => profile.id),
+  );
   const passedProfileIds = new Set(passedProfiles.map((profile) => profile.id));
   const blockedUserIds = new Set([
     ...blockedByViewer.map((row) => row.blocked_user_id),
@@ -235,12 +255,14 @@ export async function getDiscoveryRecommendations(
     (profile) =>
       profile.user_id !== ownedProfile.account.id &&
       !passedProfileIds.has(profile.id) &&
+      !hiddenSavedProfileIds.has(profile.id) &&
       !blockedUserIds.has(profile.user_id) &&
       profile.onboarding_completed_at &&
-      profile.profile_completion_score >= 80 &&
+      profile.profile_completion_score >= minimumBasicProfileCompletion &&
       (profile.photo_urls?.length ?? 0) >= minimumDiscoveryPhotoCount &&
       profile.discoverable &&
-      profile.visibility !== "private",
+      profile.visibility !== "private" &&
+      matchesDiscoveryFilters(profile, filters),
   );
 
   if (candidates.length === 0) {
@@ -536,9 +558,11 @@ export async function saveDiscoveryProfile(
   await assertProfileHasMinimumPhotos(target.id);
 
   const supabase = createSupabaseAdminClient();
+  const rediscoverAfter = getRediscoveryAfter();
 
   const { error: saveError } = await supabase.from("saved_profiles").upsert(
     {
+      rediscover_after: rediscoverAfter,
       saved_profile_id: target.id,
       saved_user_id: target.user_id,
       viewer_user_id: ownedProfile.account.id,
@@ -556,9 +580,15 @@ export async function saveDiscoveryProfile(
     .eq("viewer_user_id", ownedProfile.account.id)
     .eq("passed_user_id", target.user_id);
 
-  await createProfileSaveNotifications(ownedProfile, target);
+  const matchResult = await createProfileSaveNotifications(ownedProfile, target);
 
-  return { liked: true, profileId: target.id, saved: true };
+  return {
+    conversationId: matchResult.conversationId,
+    liked: true,
+    matched: matchResult.matched,
+    profileId: target.id,
+    saved: true,
+  };
 }
 
 export async function passDiscoveryProfile(
@@ -567,9 +597,11 @@ export async function passDiscoveryProfile(
 ) {
   const target = await getTargetProfile(ownedProfile, profileId);
   const supabase = createSupabaseAdminClient();
+  const rediscoverAfter = getRediscoveryAfter();
 
   const { error: passError } = await supabase.from("passed_profiles").upsert(
     {
+      expires_at: rediscoverAfter,
       passed_profile_id: target.id,
       passed_user_id: target.user_id,
       viewer_user_id: ownedProfile.account.id,
@@ -729,7 +761,7 @@ async function fetchCandidateProfiles(ownedProfile: OwnedProfile) {
     .select("*")
     .neq("user_id", ownedProfile.account.id)
     .not("onboarding_completed_at", "is", null)
-    .gte("profile_completion_score", 80)
+    .gte("profile_completion_score", minimumBasicProfileCompletion)
     .eq("discoverable", true)
     .neq("visibility", "private")
     .limit(100);
@@ -859,7 +891,7 @@ async function fetchSavedProfiles(viewerUserId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("saved_profiles")
-    .select("saved_profile_id, saved_user_id")
+    .select("saved_profile_id, saved_user_id, rediscover_after")
     .eq("viewer_user_id", viewerUserId);
 
   if (error) {
@@ -867,10 +899,12 @@ async function fetchSavedProfiles(viewerUserId: string) {
   }
 
   return ((data ?? []) as Array<{
+    rediscover_after: string | null;
     saved_profile_id: string;
     saved_user_id: string;
-  }>).map((row) => ({
+  }>).map((row): SavedProfileReference => ({
     id: row.saved_profile_id,
+    rediscover_after: row.rediscover_after,
     user_id: row.saved_user_id,
   }));
 }
@@ -922,6 +956,50 @@ async function fetchBlockedViewer(viewerUserId: string) {
   }
 
   return (data ?? []) as Array<{ blocker_user_id: string }>;
+}
+
+function isRediscoveryActive(
+  rediscoverAfter: string | null,
+  now = new Date(),
+) {
+  if (!rediscoverAfter) {
+    return true;
+  }
+
+  const rediscoveryDate = new Date(rediscoverAfter);
+
+  if (Number.isNaN(rediscoveryDate.getTime())) {
+    return true;
+  }
+
+  return rediscoveryDate > now;
+}
+
+function matchesDiscoveryFilters(
+  profile: ProfileRow,
+  filters: DiscoveryFiltersInput,
+) {
+  if (filters.gender && profile.gender !== filters.gender) {
+    return false;
+  }
+
+  if (filters.minAge || filters.maxAge) {
+    const age = getAge(profile.birthdate);
+
+    if (!age) {
+      return false;
+    }
+
+    if (filters.minAge && age < filters.minAge) {
+      return false;
+    }
+
+    if (filters.maxAge && age > filters.maxAge) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function getCompletedCurrentOnboarding(ownedProfile: OwnedProfile) {
@@ -1159,10 +1237,12 @@ async function createProfileSaveNotifications(
   }
 
   if (!reciprocalSave) {
-    return;
+    return { conversationId: null, matched: false };
   }
 
   const pairKey = [ownedProfile.account.id, target.user_id].sort().join(":");
+  const conversationResult = await createConversation(ownedProfile, target.id);
+  const conversationId = conversationResult.conversation.id;
 
   await Promise.all([
     trackAnalyticsEvent({
@@ -1176,10 +1256,11 @@ async function createProfileSaveNotifications(
     createNotification({
       actorUserId: target.user_id,
       data: {
+        conversationId,
         profileId: target.id,
       },
       dedupeKey: `mutual_save:${pairKey}:${ownedProfile.account.id}`,
-      entityId: target.id,
+      entityId: conversationId,
       entityType: "match",
       recipientUserId: ownedProfile.account.id,
       type: "mutual_save",
@@ -1187,15 +1268,18 @@ async function createProfileSaveNotifications(
     createNotification({
       actorUserId: ownedProfile.account.id,
       data: {
+        conversationId,
         profileId: ownedProfile.profile.id,
       },
       dedupeKey: `mutual_save:${pairKey}:${target.user_id}`,
-      entityId: ownedProfile.profile.id,
+      entityId: conversationId,
       entityType: "match",
       recipientUserId: target.user_id,
       type: "mutual_save",
     }),
   ]);
+
+  return { conversationId, matched: true };
 }
 
 function buildRecommendation({
@@ -1256,6 +1340,17 @@ function buildRecommendation({
       (sameConversationStyle ? 11 : 0) +
       (sameAvailability ? 9 : 0) +
       personalityFit +
+      Math.min(
+        5,
+        Math.max(
+          0,
+          Math.floor(
+            (candidate.profile_completion_score -
+              minimumBasicProfileCompletion) /
+              10,
+          ),
+        ),
+      ) +
       (candidate.has_active_boost ? 6 : 0),
   );
   const reasons = buildReasons({
@@ -1322,6 +1417,8 @@ function buildRecommendation({
       bio: candidate.bio ?? candidateOnboarding.primary_goal,
       circles: ensureAtLeast(circles, ["Shared intent", "Local discovery"]),
       city: formatLocation(candidate),
+      gender: candidate.gender,
+      genderLabel: candidate.gender ? genderLabels[candidate.gender] : null,
       id: candidate.id,
       image,
       hasActiveBoost: Boolean(candidate.has_active_boost),
@@ -1684,6 +1781,18 @@ function getAge(birthdate: string | null) {
   }
 
   return age >= 18 && age <= 120 ? age : null;
+}
+
+function getRediscoveryAfter() {
+  const configuredDays = Number(process.env.TRIBE_REDISCOVERY_DAYS);
+  const days =
+    Number.isFinite(configuredDays) && configuredDays > 0
+      ? configuredDays
+      : defaultRediscoveryDays;
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+
+  return date.toISOString();
 }
 
 function formatLocation(profile: ProfileRow) {

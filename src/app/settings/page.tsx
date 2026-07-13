@@ -44,7 +44,7 @@ const settingsSections: SettingsSection[] = [
     label: "Privacy",
   },
   {
-    body: "Tune whether you appear in recommendations and keep your profile quality above launch standards.",
+    body: "Control whether you appear in People. Basic access starts at 50%; completing 80% or more improves recommendation quality.",
     href: "/profile/edit",
     icon: Search,
     label: "People visibility",
@@ -123,12 +123,21 @@ export default async function SettingsPage() {
               messaging permissions, safety posture, and future subscription.
             </p>
           </div>
-          <Link
-            className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-            href="/profile/edit"
-          >
-            Edit profile
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link
+              className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+              href="/profile/preview"
+            >
+              <Eye size={16} />
+              Preview profile
+            </Link>
+            <Link
+              className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+              href="/profile/edit"
+            >
+              Edit profile
+            </Link>
+          </div>
         </header>
 
         <section className="mt-6 grid gap-3 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm sm:grid-cols-3">

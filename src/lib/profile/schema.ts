@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { genderValues } from "@/lib/onboarding/options";
 
 const nullableText = (maxLength: number) =>
   z
@@ -22,6 +23,7 @@ export const profileInputSchema = z.object({
   country: nullableText(120),
   discoverable: z.boolean().optional(),
   displayName: nullableText(120),
+  gender: z.enum(genderValues).nullable().optional(),
   region: nullableText(120),
   socialPace: nullableText(80),
   temperamentSummary: nullableText(240),

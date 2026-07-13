@@ -2,8 +2,9 @@
 
 import { ArrowLeft, Bell, Check, LoaderCircle } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { NotificationRecord } from "@/lib/notifications/service";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type NotificationsPayload = {
   error?: string;
@@ -23,46 +24,45 @@ export default function NotificationsPage() {
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | NotificationsPayload
+        | null;
 
-    async function loadNotifications() {
-      try {
-        const response = await fetch("/api/notifications", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = (await response.json().catch(() => null)) as
-          | NotificationsPayload
-          | null;
-
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Unable to load notifications.");
-        }
-
-        if (isMounted) {
-          setNotifications(payload?.notifications ?? []);
-          setUnreadCount(payload?.unreadCount ?? 0);
-          setStatus("ready");
-        }
-      } catch (loadError) {
-        if (isMounted) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Unable to load notifications.",
-          );
-          setStatus("error");
-        }
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to load notifications.");
       }
+
+      setNotifications(payload?.notifications ?? []);
+      setUnreadCount(payload?.unreadCount ?? 0);
+      setStatus("ready");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load notifications.",
+      );
+      setStatus("error");
     }
-
-    loadNotifications();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadNotifications();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadNotifications]);
+
+  useRealtimeInvalidation({
+    events: ["notifications"],
+    onInvalidate: loadNotifications,
+  });
 
   async function markRead(notification: NotificationRecord) {
     if (notification.isRead) {
@@ -202,8 +202,17 @@ export default function NotificationsPage() {
                 key={notification.id}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <Link className="min-w-0 flex-1" href={notification.href}>
-                    <p className="text-sm font-semibold text-[#607265]">
+                  <Link
+                    className="min-w-0 flex-1"
+                    href={notification.href}
+                    onClick={() => {
+                      void markRead(notification);
+                    }}
+                  >
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#607265]">
+                      <span className="rounded-md bg-[#eef4eb] px-2 py-1 text-xs font-bold uppercase text-[#34443a]">
+                        {getNotificationCategory(notification.type)}
+                      </span>
                       {notification.title}
                     </p>
                     <h2 className="mt-1 text-lg font-semibold">
@@ -274,8 +283,8 @@ function NotificationsEmptyState() {
         Important activity will stay easy to review.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-[#34443a]">
-        Likes, mutual likes, conversation starts, and new messages will appear
-        here. Push and email notifications are intentionally off in this build.
+        Likes, mutual likes, mentions, comments, replies, and important account
+        updates will appear here. New messages stay inside Chats.
       </p>
       <Link
         className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
@@ -285,6 +294,38 @@ function NotificationsEmptyState() {
       </Link>
     </section>
   );
+}
+
+function getNotificationCategory(type: NotificationRecord["type"]) {
+  if (type === "profile_saved") {
+    return "Like";
+  }
+
+  if (type === "mutual_save") {
+    return "Match";
+  }
+
+  if (type === "square_comment") {
+    return "Comment";
+  }
+
+  if (type === "square_reply") {
+    return "Reply";
+  }
+
+  if (type === "square_mention") {
+    return "Mention";
+  }
+
+  if (type === "system_announcement" || type === "feature_update") {
+    return "Update";
+  }
+
+  if (type === "account_security") {
+    return "Account";
+  }
+
+  return "Square";
 }
 
 function formatDate(value: string) {

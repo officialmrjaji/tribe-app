@@ -4,7 +4,6 @@ import {
   type OwnedProfile,
 } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import { createNotification } from "@/lib/notifications/service";
 
 export class MessagingError extends Error {
   status: number;
@@ -309,21 +308,6 @@ export async function createConversation(
     throw readError;
   }
 
-  if (created) {
-    await createNotification({
-      actorUserId: ownedProfile.account.id,
-      data: {
-        conversationId: conversation.id,
-        profileId: ownedProfile.profile.id,
-      },
-      dedupeKey: `conversation_created:${conversation.id}:${target.user_id}`,
-      entityId: conversation.id,
-      entityType: "conversation",
-      recipientUserId: target.user_id,
-      type: "conversation_created",
-    });
-  }
-
   const summary = await getConversationSummaryById(
     ownedProfile,
     conversation.id,
@@ -493,23 +477,6 @@ export async function sendConversationMessage(
   if (readError) {
     throw readError;
   }
-
-  await Promise.all(
-    otherMembers.map((member) =>
-      createNotification({
-        actorUserId: ownedProfile.account.id,
-        data: {
-          conversationId,
-          messageId: sentMessage.id,
-          profileId: ownedProfile.profile.id,
-        },
-        entityId: sentMessage.id,
-        entityType: "message",
-        recipientUserId: member.user_id,
-        type: "new_message",
-      }),
-    ),
-  );
 
   const profiles = await fetchProfilesForMembers(members);
 

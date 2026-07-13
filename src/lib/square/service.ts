@@ -3,6 +3,7 @@ import {
   type OwnedProfile,
   type ProfileVerification,
 } from "@/lib/profile/service";
+import { createNotification } from "@/lib/notifications/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type {
   SquareCommentEditInput,
@@ -470,6 +471,21 @@ export async function toggleSquareLike({
 
   const likeCount = await refreshPostCount(postId, "likes");
 
+  if (liked && post.author_user_id !== ownedProfile.account.id) {
+    await createNotification({
+      actorUserId: ownedProfile.account.id,
+      data: {
+        postId,
+        profileId: ownedProfile.profile.id,
+      },
+      dedupeKey: `square_like:${postId}:${ownedProfile.account.id}:${post.author_user_id}`,
+      entityId: postId,
+      entityType: "square_post",
+      recipientUserId: post.author_user_id,
+      type: "square_like",
+    });
+  }
+
   return { liked, likeCount, postId };
 }
 
@@ -531,7 +547,15 @@ export async function createSquareComment({
     syncPostMentions({
       commentId: data.id,
       mentionedByUserId: ownedProfile.account.id,
+      postId,
       tokens: extractMentionTokens(cleanBody),
+    }),
+    createSquareCommentNotifications({
+      commentId: data.id,
+      ownedProfile,
+      parentComment,
+      post,
+      postId,
     }),
   ]);
 
@@ -653,6 +677,7 @@ export async function updateSquareComment({
   await replaceMentions({
     commentId,
     mentionedByUserId: ownedProfile.account.id,
+    postId: comment.post_id,
     tokens: extractMentionTokens(cleanBody),
   });
 
@@ -860,7 +885,75 @@ export async function repostSquarePost({
 
   const repostCount = await refreshPostCount(postId, "reposts");
 
+  await createNotification({
+    actorUserId: ownedProfile.account.id,
+    data: {
+      postId,
+      profileId: ownedProfile.profile.id,
+    },
+    dedupeKey: `square_repost:${postId}:${ownedProfile.account.id}:${post.author_user_id}`,
+    entityId: postId,
+    entityType: "square_post",
+    recipientUserId: post.author_user_id,
+    type: "square_repost",
+  });
+
   return { postId, repostCount, reposted: true };
+}
+
+async function createSquareCommentNotifications({
+  commentId,
+  ownedProfile,
+  parentComment,
+  post,
+  postId,
+}: {
+  commentId: string;
+  ownedProfile: OwnedProfile;
+  parentComment: SquareCommentRow | null;
+  post: SquarePostRow;
+  postId: string;
+}) {
+  const notifications: Array<Promise<unknown>> = [];
+
+  if (parentComment && parentComment.author_user_id !== ownedProfile.account.id) {
+    notifications.push(
+      createNotification({
+        actorUserId: ownedProfile.account.id,
+        data: {
+          commentId,
+          postId,
+          profileId: ownedProfile.profile.id,
+        },
+        entityId: commentId,
+        entityType: "square_comment",
+        recipientUserId: parentComment.author_user_id,
+        type: "square_reply",
+      }),
+    );
+  }
+
+  if (
+    post.author_user_id !== ownedProfile.account.id &&
+    post.author_user_id !== parentComment?.author_user_id
+  ) {
+    notifications.push(
+      createNotification({
+        actorUserId: ownedProfile.account.id,
+        data: {
+          commentId,
+          postId,
+          profileId: ownedProfile.profile.id,
+        },
+        entityId: commentId,
+        entityType: "square_comment",
+        recipientUserId: post.author_user_id,
+        type: "square_comment",
+      }),
+    );
+  }
+
+  await Promise.all(notifications);
 }
 
 export async function deleteSquareRepost({
@@ -1794,7 +1887,7 @@ async function attachCommentsToPosts({
     .eq("status", "active")
     .is("deleted_at", null)
     .order("created_at", { ascending: true })
-    .limit(240);
+    .limit(Math.min(80, posts.length * 4));
 
   if (error) {
     throw error;
@@ -1824,7 +1917,7 @@ async function attachCommentsToPosts({
 
   return posts.map((post) => ({
     ...post,
-    comments: commentsByPostId.get(post.id) ?? [],
+    comments: (commentsByPostId.get(post.id) ?? []).slice(0, 2),
   }));
 }
 
@@ -1866,10 +1959,10 @@ async function replaceMentions({
   const supabase = createSupabaseAdminClient();
   let query = supabase.from("square_mentions").delete();
 
-  if (postId) {
-    query = query.eq("post_id", postId).is("comment_id", null);
-  } else if (commentId) {
+  if (commentId) {
     query = query.eq("comment_id", commentId);
+  } else if (postId) {
+    query = query.eq("post_id", postId).is("comment_id", null);
   } else {
     return;
   }
@@ -1987,6 +2080,23 @@ async function syncPostMentions({
   if (error) {
     throw error;
   }
+
+  await Promise.all(
+    mentionedUsers.map((user) =>
+      createNotification({
+        actorUserId: mentionedByUserId,
+        data: {
+          commentId: commentId ?? null,
+          postId: postId ?? null,
+        },
+        dedupeKey: `square_mention:${postId ?? "comment"}:${commentId ?? "post"}:${mentionedByUserId}:${user.userId}`,
+        entityId: commentId ?? postId ?? null,
+        entityType: commentId ? "square_comment" : "square_post",
+        recipientUserId: user.userId,
+        type: "square_mention",
+      }),
+    ),
+  );
 }
 
 async function resolveMentionedUsers(tokens: string[]) {

@@ -32,6 +32,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/onboarding(.*)",
   "/api/premium(.*)",
   "/api/profile(.*)",
+  "/api/realtime(.*)",
   "/api/square(.*)",
   "/api/voice(.*)",
 ]);

@@ -7,6 +7,7 @@ import {
   Heart,
   LoaderCircle,
   MessageCircle,
+  MoreVertical,
   Repeat2,
   Send,
   ShieldCheck,
@@ -16,9 +17,11 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { ProfilePhotoGallery } from "@/components/profile/profile-photo-gallery";
 import type { SquareComment, SquarePost } from "@/lib/square/service";
 import { squarePostTypeLabels } from "@/lib/square/schema";
 
@@ -48,6 +51,7 @@ export function SquarePostCard({
   onDeleted,
   post,
 }: SquarePostCardProps) {
+  const router = useRouter();
   const [currentPost, setCurrentPost] = useState(post);
   const [comments, setComments] = useState(post.comments ?? []);
   const [commentDraft, setCommentDraft] = useState("");
@@ -62,8 +66,22 @@ export function SquarePostCard({
   const [showComposer, setShowComposer] = useState(expanded);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const commentTree = useMemo(() => buildCommentTree(comments), [comments]);
+  const previewComments = commentTree.slice(0, 2);
+  const detailHref = `/square/posts/${currentPost.id}`;
+
+  function openPostDetail() {
+    if (!expanded && !editingPost) {
+      router.push(detailHref);
+    }
+  }
+
+  function openCommentComposer() {
+    setShowComposer(true);
+    window.requestAnimationFrame(() => commentInputRef.current?.focus());
+  }
 
   async function likePost() {
     const nextLiked = !currentPost.isLiked;
@@ -310,6 +328,54 @@ export function SquarePostCard({
     } catch (muteError) {
       setError(
         muteError instanceof Error ? muteError.message : "Member could not be hidden.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function blockAuthor() {
+    if (!currentPost.author.profileId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Block this member? You will no longer be able to interact with each other.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `block:${currentPost.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/profile/block", {
+        body: JSON.stringify({
+          profileId: currentPost.author.profileId,
+          reason: "Square safety action",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be blocked."),
+        );
+      }
+
+      onDeleted?.(currentPost.id);
+      setNotice("Member blocked successfully.");
+    } catch (blockError) {
+      setError(
+        blockError instanceof Error
+          ? blockError.message
+          : "Member could not be blocked.",
       );
     } finally {
       setPendingAction("");
@@ -619,7 +685,7 @@ export function SquarePostCard({
       <div className="p-4">
         <div className="flex items-start gap-3">
           {currentPost.author.avatarUrl ? (
-            <Image
+            <SafeStorageImage
               alt={`${currentPost.author.name} avatar`}
               className="h-11 w-11 rounded-md object-cover"
               height={44}
@@ -632,7 +698,7 @@ export function SquarePostCard({
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 {currentPost.author.profileHref ? (
                   <Link
@@ -652,16 +718,57 @@ export function SquarePostCard({
                   {currentPost.editedAt ? " / Edited" : ""}
                 </p>
               </div>
-              <span
-                className={cx(
-                  "rounded-md px-2 py-1 text-xs font-bold",
-                  currentPost.isAnonymous
-                    ? "bg-[#fff4d8] text-[#75520d]"
-                    : "bg-[#e4f4ec] text-[#176b57]",
-                )}
-              >
-                {currentPost.isAnonymous ? "Anonymous" : currentPost.city}
-              </span>
+              <div className="flex items-center gap-1">
+                <span
+                  className={cx(
+                    "rounded-md px-2 py-1 text-xs font-bold",
+                    currentPost.isAnonymous
+                      ? "bg-[#fff4d8] text-[#75520d]"
+                      : "bg-[#e4f4ec] text-[#176b57]",
+                  )}
+                >
+                  {currentPost.isAnonymous ? "Anonymous" : currentPost.city}
+                </span>
+                <MoreMenu
+                  items={
+                    currentPost.isMine
+                      ? [
+                          {
+                            icon: Edit3,
+                            label: "Edit post",
+                            onClick: () => setEditingPost(true),
+                          },
+                          {
+                            danger: true,
+                            icon: Trash2,
+                            label: "Delete post",
+                            onClick: deletePost,
+                          },
+                        ]
+                      : [
+                          {
+                            icon: Flag,
+                            label: "Report post",
+                            onClick: reportPost,
+                          },
+                          {
+                            disabled: !currentPost.author.userId,
+                            icon: UserX,
+                            label: "Hide member",
+                            onClick: hideAuthor,
+                          },
+                          {
+                            danger: true,
+                            disabled: !currentPost.author.profileId,
+                            icon: ShieldCheck,
+                            label: "Block member",
+                            onClick: blockAuthor,
+                          },
+                        ]
+                  }
+                  label="More post actions"
+                />
+              </div>
             </div>
 
             {currentPost.author.verification ? (
@@ -712,9 +819,24 @@ export function SquarePostCard({
             </div>
           </form>
         ) : (
-          <div className="mt-4 space-y-3">
+          <div
+            aria-label={`Open ${currentPost.author.name}'s Square post`}
+            className={cx(
+              "mt-4 space-y-3",
+              !expanded && "cursor-pointer rounded-md transition hover:bg-[#f8fcf9]",
+            )}
+            onClick={openPostDetail}
+            onKeyDown={(event) => {
+              if (!expanded && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                openPostDetail();
+              }
+            }}
+            role={!expanded ? "link" : undefined}
+            tabIndex={!expanded ? 0 : undefined}
+          >
             {currentPost.body ? (
-              <RichText text={currentPost.body} />
+              <RichText compact={!expanded} text={currentPost.body} />
             ) : null}
             {currentPost.caption ? (
               <p className="text-sm leading-6 text-[#477060]">
@@ -722,13 +844,20 @@ export function SquarePostCard({
               </p>
             ) : null}
             {currentPost.imageUrl ? (
-              <Image
-                alt={currentPost.caption ?? "Square photo"}
-                className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
-                height={520}
-                src={currentPost.imageUrl}
-                width={900}
-              />
+              <div onClick={(event) => event.stopPropagation()}>
+                <ProfilePhotoGallery
+                  label="Open Square photo"
+                  photos={[currentPost.imageUrl]}
+                >
+                  <SafeStorageImage
+                    alt={currentPost.caption ?? "Square photo"}
+                    className="max-h-[460px] w-full rounded-md object-cover transition duration-200 hover:scale-[1.005]"
+                    height={520}
+                    src={currentPost.imageUrl}
+                    width={900}
+                  />
+                </ProfilePhotoGallery>
+              </div>
             ) : null}
           </div>
         )}
@@ -771,6 +900,7 @@ export function SquarePostCard({
                 className="rounded-md bg-[#f3f8f5] px-2.5 py-1 text-xs font-semibold text-[#34443a] transition hover:bg-[#e4f4ec]"
                 href={`/square/topics/${topic.slug}`}
                 key={topic.id}
+                onClick={(event) => event.stopPropagation()}
               >
                 #{topic.slug}
               </Link>
@@ -785,23 +915,38 @@ export function SquarePostCard({
           <ActionButton
             active={currentPost.isLiked}
             busy={pendingAction === `like:${currentPost.id}`}
+            compact={!expanded}
             icon={Heart}
             label={`${currentPost.likeCount} Like${
               currentPost.likeCount === 1 ? "" : "s"
             }`}
             onClick={likePost}
           />
-          <ActionButton
-            active={showComposer}
-            icon={MessageCircle}
-            label={`${currentPost.commentCount} Comment${
-              currentPost.commentCount === 1 ? "" : "s"
-            }`}
-            onClick={() => setShowComposer((value) => !value)}
-          />
+          {expanded ? (
+            <ActionButton
+              active={showComposer}
+              icon={MessageCircle}
+              label={`${currentPost.commentCount} Comment${
+                currentPost.commentCount === 1 ? "" : "s"
+              }`}
+              onClick={openCommentComposer}
+            />
+          ) : (
+            <Link
+              aria-label={`${currentPost.commentCount} comment${
+                currentPost.commentCount === 1 ? "" : "s"
+              }. Open comments.`}
+              className="flex min-h-9 items-center justify-center gap-2 rounded-md border border-[#c9ddd3] bg-white px-3 text-sm font-semibold text-[#34443a] transition duration-150 hover:bg-[#eef7f1]"
+              href={detailHref}
+            >
+              <MessageCircle size={16} />
+              <span aria-hidden="true">{currentPost.commentCount}</span>
+            </Link>
+          )}
           <ActionButton
             active={currentPost.isReposted}
             busy={pendingAction === `repost:${currentPost.id}`}
+            compact={!expanded}
             disabled={
               currentPost.isReposted ||
               currentPost.isMine ||
@@ -811,43 +956,36 @@ export function SquarePostCard({
             label={`${currentPost.repostCount} Repost`}
             onClick={repostPost}
           />
-          {currentPost.isMine ? (
-            <>
-              <ActionButton
-                active={editingPost}
-                icon={Edit3}
-                label="Edit"
-                onClick={() => setEditingPost(true)}
-              />
-              <ActionButton
-                busy={pendingAction === `delete:${currentPost.id}`}
-                icon={Trash2}
-                label="Delete"
-                onClick={deletePost}
-                tone="danger"
-              />
-            </>
-          ) : (
-            <>
-              <ActionButton
-                busy={pendingAction === `report:${currentPost.id}`}
-                icon={Flag}
-                label="Report"
-                onClick={reportPost}
-              />
-              <ActionButton
-                busy={pendingAction === `mute:${currentPost.id}`}
-                disabled={!currentPost.author.userId}
-                icon={UserX}
-                label="Hide"
-                onClick={hideAuthor}
-              />
-            </>
-          )}
         </div>
       </div>
 
-      {(showComposer || comments.length > 0) ? (
+      {!expanded && previewComments.length > 0 ? (
+        <section className="border-t border-[#dcebe4] bg-[#f8fcf9] px-4 py-3">
+          <Link
+            className="block space-y-2 rounded-md border border-[#dcebe4] bg-white px-3 py-2 transition hover:border-[#9cc7b7]"
+            href={`/square/posts/${currentPost.id}`}
+          >
+            {previewComments.map((comment) => (
+              <p
+                className="line-clamp-2 text-sm leading-6 text-[#34443a]"
+                key={comment.id}
+              >
+                <span className="font-semibold text-[#17201b]">
+                  {comment.author.name}:{" "}
+                </span>
+                {comment.body}
+              </p>
+            ))}
+            {currentPost.commentCount > previewComments.length ? (
+              <p className="text-xs font-semibold uppercase text-[#477060]">
+                View all {currentPost.commentCount} comments
+              </p>
+            ) : null}
+          </Link>
+        </section>
+      ) : null}
+
+      {expanded && (showComposer || comments.length > 0) ? (
         <section className="border-t border-[#dcebe4] bg-[#f8fcf9] px-4 py-3">
           {showComposer ? (
             <form
@@ -866,6 +1004,7 @@ export function SquarePostCard({
                 maxLength={1000}
                 onChange={(event) => setCommentDraft(event.target.value)}
                 placeholder="Add a thoughtful comment. Use @name to mention someone."
+                ref={commentInputRef}
                 value={commentDraft}
               />
               <button
@@ -973,14 +1112,17 @@ function CommentItem({
   return (
     <div
       className={cx(
-        "rounded-md bg-white px-3 py-3 shadow-sm",
-        depth > 0 && "border-l-2 border-[#9cc7b7]",
+        "rounded-md px-3 py-3",
+        depth === 0
+          ? "border border-[#dcebe4] bg-white shadow-sm"
+          : "border-l-2 border-[#9cc7b7] bg-[#f8fcf9]",
       )}
-      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 14 : 0 }}
+      id={`comment-${comment.id}`}
+      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 16 : 0 }}
     >
       <div className="flex items-start gap-3">
         {comment.author.avatarUrl ? (
-          <Image
+          <SafeStorageImage
             alt={`${comment.author.name} avatar`}
             className="h-8 w-8 rounded-md object-cover"
             height={32}
@@ -993,23 +1135,54 @@ function CommentItem({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {comment.author.profileHref ? (
-              <Link
-                className="text-sm font-semibold text-[#17201b] transition hover:text-[#477060]"
-                href={comment.author.profileHref}
-              >
-                {comment.author.name}
-              </Link>
-            ) : (
-              <p className="text-sm font-semibold text-[#17201b]">
-                {comment.author.name}
-              </p>
-            )}
-            <span className="text-xs font-semibold uppercase text-[#477060]">
-              {formatDate(comment.createdAt)}
-              {comment.editedAt ? " / Edited" : ""}
-            </span>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {comment.author.profileHref ? (
+                <Link
+                  className="text-sm font-semibold text-[#17201b] transition hover:text-[#477060]"
+                  href={comment.author.profileHref}
+                >
+                  {comment.author.name}
+                </Link>
+              ) : (
+                <p className="text-sm font-semibold text-[#17201b]">
+                  {comment.author.name}
+                </p>
+              )}
+              <span className="text-xs font-semibold uppercase text-[#477060]">
+                {formatDate(comment.createdAt)}
+                {comment.editedAt ? " / Edited" : ""}
+              </span>
+            </div>
+            <MoreMenu
+              items={
+                comment.isMine
+                  ? [
+                      {
+                        icon: Edit3,
+                        label: "Edit comment",
+                        onClick: () => {
+                          setEditingCommentId(comment.id);
+                          setEditingCommentBody(comment.body);
+                        },
+                      },
+                      {
+                        danger: true,
+                        icon: Trash2,
+                        label: "Delete comment",
+                        onClick: () => deleteComment(comment),
+                      },
+                    ]
+                  : [
+                      {
+                        icon: Flag,
+                        label: "Report comment",
+                        onClick: () => reportComment(comment),
+                      },
+                    ]
+              }
+              label="More comment actions"
+            />
           </div>
 
           {isEditing ? (
@@ -1073,33 +1246,6 @@ function CommentItem({
                 setReplyingToCommentId(isReplying ? "" : comment.id)
               }
             />
-            {comment.isMine ? (
-              <>
-                <MiniActionButton
-                  active={isEditing}
-                  icon={Edit3}
-                  label="Edit"
-                  onClick={() => {
-                    setEditingCommentId(comment.id);
-                    setEditingCommentBody(comment.body);
-                  }}
-                />
-                <MiniActionButton
-                  busy={pendingAction === `comment-delete:${comment.id}`}
-                  icon={Trash2}
-                  label="Delete"
-                  onClick={() => deleteComment(comment)}
-                  tone="danger"
-                />
-              </>
-            ) : (
-              <MiniActionButton
-                busy={pendingAction === `comment-report:${comment.id}`}
-                icon={Flag}
-                label="Report"
-                onClick={() => reportComment(comment)}
-              />
-            )}
           </div>
 
           {isReplying ? (
@@ -1141,7 +1287,7 @@ function CommentItem({
           ) : null}
 
           {comment.replies.length ? (
-            <div className="mt-2 space-y-2">
+            <div className="mt-3 space-y-2 border-l border-[#dcebe4] pl-3">
               {comment.replies.map((reply) => (
                 <CommentItem
                   comment={reply}
@@ -1171,9 +1317,68 @@ function CommentItem({
   );
 }
 
+function MoreMenu({
+  items,
+  label,
+}: {
+  items: Array<{
+    danger?: boolean;
+    disabled?: boolean;
+    icon: LucideIcon;
+    label: string;
+    onClick: () => void;
+  }>;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        aria-label={label}
+        className="flex h-8 w-8 items-center justify-center rounded-md text-[#477060] transition hover:bg-[#eef7f1] hover:text-[#17251f]"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <MoreVertical size={17} />
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-9 z-20 min-w-44 rounded-md border border-[#c9ddd3] bg-white p-1 shadow-lg">
+          {items.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <button
+                className={cx(
+                  "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
+                  item.danger
+                    ? "text-[#8a3325] hover:bg-[#fff5f1]"
+                    : "text-[#34443a] hover:bg-[#eef7f1]",
+                )}
+                disabled={item.disabled}
+                key={item.label}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+                type="button"
+              >
+                <Icon size={15} />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ActionButton({
   active = false,
   busy = false,
+  compact = false,
   disabled = false,
   icon: Icon,
   label,
@@ -1182,6 +1387,7 @@ function ActionButton({
 }: {
   active?: boolean;
   busy?: boolean;
+  compact?: boolean;
   disabled?: boolean;
   icon: LucideIcon;
   label: string;
@@ -1207,7 +1413,14 @@ function ActionButton({
       ) : (
         <Icon size={16} />
       )}
-      {label}
+      {compact ? (
+        <>
+          <span aria-hidden="true">{label.split(" ")[0]}</span>
+          <span className="sr-only">{label}</span>
+        </>
+      ) : (
+        label
+      )}
     </button>
   );
 }
@@ -1273,10 +1486,16 @@ function Notice({
   );
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ compact = false, text }: { compact?: boolean; text: string }) {
+  const shouldTruncate = compact && text.length > 420;
+  const displayText = shouldTruncate ? `${text.slice(0, 420).trim()}...` : text;
+
   return (
     <p className="whitespace-pre-wrap text-sm leading-6 text-[#34443a]">
-      <RichInlineText text={text} />
+      <RichInlineText text={displayText} />
+      {shouldTruncate ? (
+        <span className="ml-1 font-semibold text-[#176b57]">Read more</span>
+      ) : null}
     </p>
   );
 }
@@ -1295,6 +1514,7 @@ function RichInlineText({ text }: { text: string }) {
               className="font-semibold text-[#176b57] hover:text-[#125744]"
               href={`/square/topics/${slug}`}
               key={`${part}-${index}`}
+              onClick={(event) => event.stopPropagation()}
             >
               {part}
             </Link>

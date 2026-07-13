@@ -2,17 +2,32 @@ import type { OwnedProfile } from "@/lib/profile/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 export type NotificationType =
+  | "account_security"
   | "conversation_created"
+  | "feature_update"
   | "mutual_save"
   | "new_message"
-  | "profile_saved";
+  | "profile_saved"
+  | "square_comment"
+  | "square_like"
+  | "square_mention"
+  | "square_reply"
+  | "square_repost"
+  | "system_announcement";
 
 export type NotificationRecord = {
   actorName: string | null;
   createdAt: string;
   data: Record<string, unknown>;
   entityId: string | null;
-  entityType: "conversation" | "match" | "message" | "profile";
+  entityType:
+    | "conversation"
+    | "match"
+    | "message"
+    | "profile"
+    | "square_comment"
+    | "square_post"
+    | "system";
   href: string;
   id: string;
   isRead: boolean;
@@ -26,7 +41,7 @@ type NotificationRow = {
   created_at: string;
   data: Record<string, unknown>;
   entity_id: string | null;
-  entity_type: "conversation" | "match" | "message" | "profile";
+  entity_type: NotificationRecord["entityType"];
   id: string;
   read_at: string | null;
   recipient_user_id: string;
@@ -38,6 +53,11 @@ type ProfileSummaryRow = {
   display_name: string | null;
   user_id: string;
 };
+
+const hiddenNotificationTypes = new Set<NotificationType>([
+  "conversation_created",
+  "new_message",
+]);
 
 export async function createNotification({
   actorUserId,
@@ -102,6 +122,7 @@ export async function listNotifications(
     .from("notifications")
     .select("*")
     .eq("recipient_user_id", ownedProfile.account.id)
+    .not("type", "in", "(new_message,conversation_created)")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -110,14 +131,17 @@ export async function listNotifications(
   }
 
   const rows = (data ?? []) as NotificationRow[];
+  const visibleRows = rows.filter(isVisibleNotification);
   const actorUserIds = Array.from(
-    new Set(rows.map((row) => row.actor_user_id).filter(Boolean) as string[]),
+    new Set(
+      visibleRows.map((row) => row.actor_user_id).filter(Boolean) as string[],
+    ),
   );
   const actorProfiles = await fetchProfilesByUserIds(actorUserIds);
   const unreadCount = await getUnreadNotificationCount(ownedProfile);
 
   return {
-    notifications: rows.map((row) =>
+    notifications: visibleRows.map((row) =>
       formatNotification(row, actorProfiles.get(row.actor_user_id ?? "")),
     ),
     unreadCount,
@@ -130,7 +154,8 @@ export async function getUnreadNotificationCount(ownedProfile: OwnedProfile) {
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .eq("recipient_user_id", ownedProfile.account.id)
-    .is("read_at", null);
+    .is("read_at", null)
+    .not("type", "in", "(new_message,conversation_created)");
 
   if (error) {
     throw error;
@@ -169,13 +194,18 @@ export async function markAllNotificationsRead(ownedProfile: OwnedProfile) {
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_user_id", ownedProfile.account.id)
-    .is("read_at", null);
+    .is("read_at", null)
+    .not("type", "in", "(new_message,conversation_created)");
 
   if (error) {
     throw error;
   }
 
   return { read: true };
+}
+
+function isVisibleNotification(row: NotificationRow) {
+  return !hiddenNotificationTypes.has(row.type);
 }
 
 async function fetchProfilesByUserIds(userIds: string[]) {
@@ -209,6 +239,11 @@ function formatNotification(
   const displayName = actorName ?? "Someone";
   const conversationId = stringFromData(row.data, "conversationId");
   const profileId = stringFromData(row.data, "profileId");
+  const postId = stringFromData(row.data, "postId");
+  const commentId = stringFromData(row.data, "commentId");
+  const squareHref = postId
+    ? `/square/posts/${postId}${commentId ? `#comment-${commentId}` : ""}`
+    : "/square";
 
   if (row.type === "new_message") {
     return {
@@ -222,7 +257,11 @@ function formatNotification(
   if (row.type === "mutual_save") {
     return {
       ...baseNotification(row, actorName),
-      href: profileId ? "/explore?tab=matches" : "/explore?tab=matches",
+      href: conversationId
+        ? `/messages/${conversationId}`
+        : profileId
+          ? "/explore?tab=matches"
+          : "/explore?tab=matches",
       message: `You and ${displayName} liked each other. Messaging is now available.`,
       title: "Mutual like",
     };
@@ -237,11 +276,87 @@ function formatNotification(
     };
   }
 
+  if (row.type === "square_comment") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} commented on your Square post.`,
+      title: "Comment",
+    };
+  }
+
+  if (row.type === "square_reply") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} replied to your Square comment.`,
+      title: "Reply",
+    };
+  }
+
+  if (row.type === "square_mention") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} mentioned you in Square.`,
+      title: "Mention",
+    };
+  }
+
+  if (row.type === "square_like") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} liked your Square post.`,
+      title: "Square activity",
+    };
+  }
+
+  if (row.type === "square_repost") {
+    return {
+      ...baseNotification(row, actorName),
+      href: squareHref,
+      message: `${displayName} reposted your Square post.`,
+      title: "Square activity",
+    };
+  }
+
+  if (row.type === "system_announcement") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/notifications",
+      message: stringFromData(row.data, "message") ?? "A TribeApp update is ready.",
+      title: "System announcement",
+    };
+  }
+
+  if (row.type === "feature_update") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/notifications",
+      message:
+        stringFromData(row.data, "message") ??
+        "A product update is available to review.",
+      title: "Feature update",
+    };
+  }
+
+  if (row.type === "account_security") {
+    return {
+      ...baseNotification(row, actorName),
+      href: "/settings",
+      message:
+        stringFromData(row.data, "message") ??
+        "Review an important account or security update.",
+      title: "Account notice",
+    };
+  }
+
   return {
     ...baseNotification(row, actorName),
-    href: conversationId ? `/messages/${conversationId}` : "/messages",
-    message: `${displayName} opened a conversation with you.`,
-    title: "Conversation started",
+    href: "/notifications",
+    message: "An activity update is available.",
+    title: "Activity",
   };
 }
 
