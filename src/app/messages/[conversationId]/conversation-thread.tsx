@@ -685,7 +685,7 @@ function getMessageStatusLabel(message: ThreadMessage) {
     return "Not sent";
   }
 
-  return formatTime(message.createdAt);
+  return formatMessageTimestamp(message.createdAt);
 }
 
 function announceConversationUpdate(conversation: ConversationSummary) {
@@ -723,17 +723,54 @@ function getActionFailureMessage(payload: unknown, fallback: string) {
   return [actionPayload.error, firstIssue].filter(Boolean).join(" ") || fallback;
 }
 
-function formatTime(value: string) {
+function formatMessageTimestamp(value: string) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "Recently";
   }
 
-  return new Intl.DateTimeFormat("en", {
-    day: "numeric",
+  const now = new Date();
+  const time = new Intl.DateTimeFormat("en", {
     hour: "numeric",
     minute: "2-digit",
+  }).format(date);
+
+  if (isSameDay(date, now)) {
+    return `Today; ${time}`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  if (isSameDay(date, yesterday)) {
+    return `Yesterday; ${time}`;
+  }
+
+  const ageMs = now.getTime() - date.getTime();
+  const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+  if (ageDays < 7) {
+    return `${new Intl.DateTimeFormat("en", { weekday: "long" }).format(
+      date,
+    )} ${time}`;
+  }
+
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "short" }).format(
+    date,
+  );
+  const dayMonth = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
     month: "short",
   }).format(date);
+
+  return `${weekday}, ${dayMonth} ${time}`;
+}
+
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }

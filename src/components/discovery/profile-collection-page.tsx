@@ -59,21 +59,15 @@ export function ProfileCollectionPage({
           <nav className="grid grid-cols-2 gap-2 sm:flex">
             <Link
               className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-              href="/explore?tab=liked"
+              href="/explore"
             >
-              Liked
+              Connections
             </Link>
             <Link
               className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
               href="/explore?tab=passed"
             >
               Passed
-            </Link>
-            <Link
-              className="flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-              href="/explore?tab=matches"
-            >
-              Matches
             </Link>
             <Link
               className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"

@@ -238,7 +238,6 @@ function formatNotification(
   const actorName = actorProfile?.display_name ?? null;
   const displayName = actorName ?? "Someone";
   const conversationId = stringFromData(row.data, "conversationId");
-  const profileId = stringFromData(row.data, "profileId");
   const postId = stringFromData(row.data, "postId");
   const commentId = stringFromData(row.data, "commentId");
   const squareHref = postId
@@ -257,11 +256,7 @@ function formatNotification(
   if (row.type === "mutual_save") {
     return {
       ...baseNotification(row, actorName),
-      href: conversationId
-        ? `/messages/${conversationId}`
-        : profileId
-          ? "/explore?tab=matches"
-          : "/explore?tab=matches",
+      href: conversationId ? `/messages/${conversationId}` : "/messages",
       message: `You and ${displayName} liked each other. Messaging is now available.`,
       title: "Mutual like",
     };

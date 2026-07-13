@@ -3,6 +3,7 @@ import {
   type OwnedProfile,
   type ProfileVerification,
 } from "@/lib/profile/service";
+import { getOnboardingByProfileId } from "@/lib/onboarding/service";
 import { createNotification } from "@/lib/notifications/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type {
@@ -213,7 +214,7 @@ export async function listSquareFeed({
       trendingOnly ? "comment_count" : "created_at",
       { ascending: false },
     )
-    .limit(30);
+    .limit(trendingOnly ? 30 : 60);
 
   if (trendingOnly) {
     query = query.gt("comment_count", 0);
@@ -268,15 +269,105 @@ export async function listSquareFeed({
     posts: visibleRows,
   });
 
+  const postsWithComments = await attachCommentsToPosts({
+    currentUserId: ownedProfile.account.id,
+    hiddenUserIds,
+    posts: hydratedPosts,
+  });
+
   return {
-    posts: await attachCommentsToPosts({
-      currentUserId: ownedProfile.account.id,
-      hiddenUserIds,
-      posts: hydratedPosts,
-    }),
+    posts: trendingOnly
+      ? postsWithComments
+      : await rankSquareFeedPosts({ ownedProfile, posts: postsWithComments }),
     topics: await listSquareTopics(),
     trendingTopics: await listTrendingTopics(),
   };
+}
+
+async function rankSquareFeedPosts({
+  ownedProfile,
+  posts,
+}: {
+  ownedProfile: OwnedProfile;
+  posts: SquarePost[];
+}) {
+  const onboarding = await getOnboardingByProfileId(
+    ownedProfile.profile.id,
+  ).catch(() => null);
+  const viewerInterestSlugs = new Set<string>(onboarding?.interests ?? []);
+  const viewerCity = (ownedProfile.profile.city ?? "").trim().toLowerCase();
+  const now = Date.now();
+
+  return posts
+    .map((post, index) => ({
+      index,
+      post,
+      score: getSquareFeedScore({
+        index,
+        now,
+        post,
+        viewerCity,
+        viewerInterestSlugs,
+      }),
+    }))
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        new Date(right.post.createdAt).getTime() -
+          new Date(left.post.createdAt).getTime() ||
+        left.index - right.index,
+    )
+    .slice(0, 30)
+    .map((rankedPost) => rankedPost.post);
+}
+
+function getSquareFeedScore({
+  index,
+  now,
+  post,
+  viewerCity,
+  viewerInterestSlugs,
+}: {
+  index: number;
+  now: number;
+  post: SquarePost;
+  viewerCity: string;
+  viewerInterestSlugs: Set<string>;
+}) {
+  const createdAtMs = new Date(post.createdAt).getTime();
+  const ageHours = Number.isNaN(createdAtMs)
+    ? 72
+    : Math.max(0, (now - createdAtMs) / (60 * 60 * 1000));
+  const freshnessScore = 36 / (1 + ageHours / 12);
+  const engagementScore =
+    Math.log1p(post.likeCount * 2 + post.commentCount * 3 + post.repostCount * 2.5) *
+    14;
+  const matchingTopicCount = post.topics.filter((topic) =>
+    viewerInterestSlugs.has(topic.slug),
+  ).length;
+  const relevanceScore = matchingTopicCount * 12;
+  const cityScore =
+    viewerCity && post.city.trim().toLowerCase() === viewerCity ? 4 : 0;
+  const recentCommentScore = post.comments.some((comment) => {
+    const commentMs = new Date(comment.createdAt).getTime();
+
+    return (
+      !Number.isNaN(commentMs) &&
+      (now - commentMs) / (60 * 60 * 1000) <= 48
+    );
+  })
+    ? 6
+    : 0;
+  const freshContentFloor = Math.max(0, 12 - index * 0.25);
+
+  return (
+    freshnessScore +
+    engagementScore +
+    relevanceScore +
+    cityScore +
+    recentCommentScore +
+    freshContentFloor
+  );
 }
 
 export async function getSquarePostThread(
