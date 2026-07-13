@@ -152,6 +152,14 @@ export async function GET(request: Request) {
         );
       }
 
+      for (const table of ["voice_room_participants", "voice_rooms"]) {
+        channel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table },
+          () => send("voice"),
+        );
+      }
+
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
           send("ready");
@@ -207,4 +215,5 @@ type RealtimeEventName =
   | "messages"
   | "notifications"
   | "ready"
-  | "square";
+  | "square"
+  | "voice";

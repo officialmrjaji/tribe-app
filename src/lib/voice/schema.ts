@@ -30,5 +30,23 @@ export const joinVoiceRoomSchema = z.object({
   inviteCode: z.string().trim().max(120).optional(),
 });
 
+export const voiceRoomActionSchema = z.object({
+  action: z.enum([
+    "approve_speaker",
+    "cancel_raise_hand",
+    "demote_moderator",
+    "end_room",
+    "leave_room",
+    "lock_room",
+    "promote_moderator",
+    "raise_hand",
+    "reject_speaker",
+    "remove_participant",
+    "unlock_room",
+  ]),
+  targetUserId: z.string().uuid().optional(),
+});
+
 export type CreateVoiceRoomInput = z.infer<typeof createVoiceRoomSchema>;
 export type JoinVoiceRoomInput = z.infer<typeof joinVoiceRoomSchema>;
+export type VoiceRoomActionInput = z.infer<typeof voiceRoomActionSchema>;

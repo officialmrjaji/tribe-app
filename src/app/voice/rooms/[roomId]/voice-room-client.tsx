@@ -3,23 +3,56 @@
 import {
   ArrowLeft,
   CalendarDays,
+  Check,
+  DoorOpen,
+  Hand,
   Headphones,
+  Info,
   LoaderCircle,
   Lock,
+  MessageCircle,
   Mic,
+  MicOff,
+  MoreVertical,
   Radio,
+  ShieldAlert,
+  ShieldCheck,
+  UserMinus,
   UserRound,
   Users,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
-import type { VoiceRoomSummary } from "@/lib/voice/service";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
+import type {
+  VoiceRoomParticipantSummary,
+  VoiceRoomSummary,
+} from "@/lib/voice/service";
 
 type VoiceRoomPayload = {
   error?: string;
   room?: VoiceRoomSummary;
 };
+
+type RoomAction =
+  | "approve_speaker"
+  | "cancel_raise_hand"
+  | "demote_moderator"
+  | "end_room"
+  | "leave_room"
+  | "lock_room"
+  | "promote_moderator"
+  | "raise_hand"
+  | "reject_speaker"
+  | "remove_participant"
+  | "unlock_room";
+
+const cx = (...classes: Array<string | false | null | undefined>) =>
+  classes.filter(Boolean).join(" ");
 
 export default function VoiceRoomClient({
   initialRoom,
@@ -28,11 +61,48 @@ export default function VoiceRoomClient({
 }) {
   const [room, setRoom] = useState(initialRoom);
   const [inviteCode, setInviteCode] = useState("");
-  const [pendingAction, setPendingAction] = useState<"join" | "mic" | null>(
-    null,
-  );
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isMuted, setIsMuted] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [showRoomInfo, setShowRoomInfo] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] =
+    useState<VoiceRoomParticipantSummary | null>(null);
+
+  const viewerParticipant =
+    room.participants.find(
+      (participant) => participant.userId === room.viewerUserId,
+    ) ?? null;
+  const currentUserRaisedHand = Boolean(viewerParticipant?.handRaisedAt);
+  const canModerate = room.isHost || room.viewerRole === "moderator";
+  const isRoomEnded = room.status === "closed" || room.status === "cancelled";
+
+  const refreshRoom = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/voice/rooms/${room.id}`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceRoomPayload
+        | null;
+
+      if (response.ok && payload?.room) {
+        setRoom(payload.room);
+      }
+    } catch {
+      // Keep the current room snapshot. Realtime and fallback polling will retry.
+    }
+  }, [room.id]);
+
+  useRealtimeInvalidation({
+    events: ["voice"],
+    fallbackIntervalMs: 20_000,
+    onInvalidate: () => {
+      void refreshRoom();
+    },
+  });
 
   async function checkMicrophone() {
     setPendingAction("mic");
@@ -46,9 +116,36 @@ export default function VoiceRoomClient({
       });
 
       stream.getTracks().forEach((track) => track.stop());
-      setMessage("Microphone is ready. Video was not requested.");
+      setMessage("Microphone is available.");
     } catch {
       setError("Microphone permission is needed for voice rooms.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function toggleMute() {
+    if (!isMuted) {
+      setIsMuted(true);
+      setMessage("Muted.");
+      return;
+    }
+
+    setPendingAction("mic");
+    setError("");
+    setMessage("");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+
+      stream.getTracks().forEach((track) => track.stop());
+      setIsMuted(false);
+      setMessage("Microphone is available.");
+    } catch {
+      setError("Microphone permission is needed before unmuting.");
     } finally {
       setPendingAction(null);
     }
@@ -86,10 +183,151 @@ export default function VoiceRoomClient({
     }
   }
 
+  async function runRoomAction(action: RoomAction, targetUserId?: string) {
+    if (
+      action === "end_room" &&
+      !window.confirm("End this voice room for everyone?")
+    ) {
+      return;
+    }
+
+    if (
+      action === "remove_participant" &&
+      !window.confirm("Remove this participant from the room?")
+    ) {
+      return;
+    }
+
+    if (
+      action === "leave_room" &&
+      !room.isHost &&
+      !window.confirm("Leave this voice room?")
+    ) {
+      return;
+    }
+
+    setPendingAction(`${action}:${targetUserId ?? "self"}`);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/voice/rooms/${room.id}/actions`, {
+        body: JSON.stringify({ action, targetUserId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceRoomPayload
+        | null;
+
+      if (!response.ok || !payload?.room) {
+        throw new Error(payload?.error ?? "Unable to update voice room.");
+      }
+
+      setRoom(payload.room);
+
+      if (action === "leave_room" || action === "end_room") {
+        setMessage(action === "end_room" ? "Room ended." : "You left the room.");
+      }
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Unable to update voice room.",
+      );
+    } finally {
+      setPendingAction(null);
+      setMoreOpen(false);
+    }
+  }
+
+  async function reportParticipant(participant: VoiceRoomParticipantSummary) {
+    setPendingAction(`report:${participant.userId}`);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/profile/report", {
+        body: JSON.stringify({
+          details: `Reported from voice room ${room.id}.`,
+          profileId: participant.profileId,
+          reason: "Voice room safety concern",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Participant could not be reported."),
+        );
+      }
+
+      setMessage("Participant reported for review.");
+    } catch (reportError) {
+      setError(
+        reportError instanceof Error
+          ? reportError.message
+          : "Participant could not be reported.",
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function blockParticipant(participant: VoiceRoomParticipantSummary) {
+    if (!window.confirm("Block this member?")) {
+      return;
+    }
+
+    setPendingAction(`block:${participant.userId}`);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/profile/block", {
+        body: JSON.stringify({
+          profileId: participant.profileId,
+          reason: "Voice room safety action",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Participant could not be blocked."),
+        );
+      }
+
+      setSelectedParticipant(null);
+      setMessage("Participant blocked.");
+    } catch (blockError) {
+      setError(
+        blockError instanceof Error
+          ? blockError.message
+          : "Participant could not be blocked.",
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function copyRoomLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setMessage("Room link copied.");
+    } catch {
+      setError("Room link could not be copied.");
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-[#f6f7f1] px-4 py-6 text-[#17201b] sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 sm:flex-row sm:items-center sm:justify-between">
+    <main className="min-h-screen bg-[#f6f7f1] px-4 pb-28 pt-6 text-[#17201b] sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl">
+        <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link
               className="inline-flex items-center gap-2 text-sm font-semibold text-[#607265] transition hover:text-[#17251f]"
@@ -106,7 +344,7 @@ export default function VoiceRoomClient({
               ) : (
                 <Radio size={16} />
               )}
-              {toTitle(room.roomType)} voice room
+              {room.status === "open" ? "Live" : toTitle(room.status)}
             </p>
             <h1 className="mt-1 text-2xl font-semibold">{room.title}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
@@ -114,119 +352,574 @@ export default function VoiceRoomClient({
                 "A voice-only space for a calm, personality-first conversation."}
             </p>
           </div>
-          <button
-            className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
-            disabled={pendingAction === "mic"}
-            onClick={checkMicrophone}
-            type="button"
-          >
-            {pendingAction === "mic" ? (
-              <LoaderCircle className="animate-spin" size={16} />
-            ) : (
-              <Headphones size={16} />
-            )}
-            Mic check
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {room.isLocked ? <Tag value="Locked" /> : null}
+            {room.topic ? <Tag value={room.topic} /> : null}
+            {room.isHost ? <Tag value="Host" /> : null}
+            {room.viewerRole === "moderator" ? <Tag value="Moderator" /> : null}
+            {room.isMember ? <Tag value="Joined" /> : null}
+          </div>
         </header>
 
         {message ? <Notice message={message} tone="success" /> : null}
         {error ? <Notice message={error} tone="error" /> : null}
 
-        <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
-            <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-              <Mic size={16} />
-              Room stage
+        {isRoomEnded ? (
+          <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold text-[#607265]">Room ended</p>
+            <p className="mt-2 text-sm leading-6 text-[#34443a]">
+              This voice room is closed. You can return to Voice Rooms to join
+              another live room.
             </p>
-            <div className="mt-4 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-4">
-              <p className="text-sm leading-6 text-[#34443a]">
-                TribeApp keeps this room voice-only. The current release checks
-                microphone access and manages room membership; video is not
-                requested.
+          </section>
+        ) : null}
+
+        {!room.isMember && !isRoomEnded ? (
+          <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-[#607265]">Join room</p>
+            {room.roomType === "private" ? (
+              <input
+                className="mt-3 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
+                onChange={(event) => setInviteCode(event.target.value)}
+                placeholder="Invite code"
+                value={inviteCode}
+              />
+            ) : null}
+            <button
+              className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60 sm:w-auto"
+              disabled={
+                pendingAction === "join" ||
+                room.isLocked ||
+                room.participantCount >= room.maxParticipants
+              }
+              onClick={joinRoom}
+              type="button"
+            >
+              {pendingAction === "join" ? (
+                <LoaderCircle className="animate-spin" size={16} />
+              ) : (
+                <Mic size={16} />
+              )}
+              {room.isLocked
+                ? "Room locked"
+                : room.participantCount >= room.maxParticipants
+                  ? "Room full"
+                  : "Join room"}
+            </button>
+          </section>
+        ) : null}
+
+        <section className="mt-6 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                <Users size={16} />
+                Participants
+              </p>
+              <p className="mt-1 text-sm text-[#34443a]">
+                {room.participantCount}/{room.maxParticipants} in the room
               </p>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Stat label="Status" value={room.status} />
-              <Stat label="People" value={`${room.participantCount}/${room.maxParticipants}`} />
+            <button
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
+              disabled={pendingAction === "mic"}
+              onClick={checkMicrophone}
+              type="button"
+            >
+              {pendingAction === "mic" ? (
+                <LoaderCircle className="animate-spin" size={15} />
+              ) : (
+                <Headphones size={15} />
+              )}
+              Mic check
+            </button>
+          </div>
+
+          {room.participants.length === 0 ? (
+            <div className="mt-4 rounded-md bg-[#fbfaf4] p-4 text-sm text-[#34443a]">
+              No one has joined yet.
+            </div>
+          ) : (
+            <div
+              className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              id="voice-participants"
+            >
+              {room.participants.map((participant) => (
+                <ParticipantTile
+                  canModerate={canModerate}
+                  isCurrentUser={participant.userId === viewerParticipant?.userId}
+                  isHostViewer={room.isHost}
+                  key={participant.userId}
+                  onAction={runRoomAction}
+                  onSelect={setSelectedParticipant}
+                  participant={participant}
+                  pendingAction={pendingAction}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {showRoomInfo ? (
+          <section className="mt-4 rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+              <Info size={16} />
+              Room information
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <Stat label="Type" value={toTitle(room.roomType)} />
+              <Stat label="Status" value={toTitle(room.status)} />
               <Stat
                 label="Scheduled"
                 value={room.scheduledAt ? formatDate(room.scheduledAt) : "Now"}
               />
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {room.topic ? <Tag value={room.topic} /> : null}
-              {room.language ? <Tag value={room.language} /> : null}
-              {room.isHost ? <Tag value="Host" /> : null}
-              {room.isMember ? <Tag value="Joined" /> : null}
-            </div>
-            {!room.isMember ? (
-              <div className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-3">
-                {room.roomType === "private" ? (
-                  <input
-                    className="h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
-                    onChange={(event) => setInviteCode(event.target.value)}
-                    placeholder="Invite code"
-                    value={inviteCode}
-                  />
+          </section>
+        ) : null}
+      </div>
+
+      {selectedParticipant ? (
+        <ProfileDrawer
+          isSelf={selectedParticipant.userId === room.viewerUserId}
+          onBlock={blockParticipant}
+          onClose={() => setSelectedParticipant(null)}
+          onReport={reportParticipant}
+          participant={selectedParticipant}
+          pendingAction={pendingAction}
+        />
+      ) : null}
+
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#d8ded1] bg-white/95 px-3 py-3 shadow-[0_-10px_30px_rgba(23,32,27,0.08)] backdrop-blur">
+        <div className="mx-auto grid max-w-4xl grid-cols-3 gap-2 sm:grid-cols-6">
+          <ControlButton
+            active={!isMuted}
+            icon={isMuted ? MicOff : Mic}
+            label={isMuted ? "Unmute" : "Mute"}
+            onClick={toggleMute}
+          />
+          <ControlButton
+            icon={Users}
+            label="Participants"
+            onClick={() =>
+              document.getElementById("voice-participants")?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              })
+            }
+          />
+          <ControlButton
+            disabled
+            icon={MessageCircle}
+            label="Room Chat"
+            title="Room chat is deferred for a later release."
+          />
+          <ControlButton
+            active={currentUserRaisedHand}
+            disabled={!room.isMember || room.isHost || isRoomEnded}
+            icon={Hand}
+            label={currentUserRaisedHand ? "Lower Hand" : "Raise Hand"}
+            loading={
+              pendingAction ===
+              `${currentUserRaisedHand ? "cancel_raise_hand" : "raise_hand"}:self`
+            }
+            onClick={() =>
+              void runRoomAction(
+                currentUserRaisedHand ? "cancel_raise_hand" : "raise_hand",
+              )
+            }
+          />
+          <div className="relative">
+            <ControlButton
+              active={moreOpen}
+              icon={MoreVertical}
+              label="More"
+              onClick={() => setMoreOpen((current) => !current)}
+            />
+            {moreOpen ? (
+              <div className="absolute bottom-14 right-0 min-w-56 rounded-md border border-[#d8ded1] bg-white p-1 shadow-lg">
+                <MenuButton
+                  icon={Info}
+                  label={showRoomInfo ? "Hide room info" : "View room info"}
+                  onClick={() => {
+                    setShowRoomInfo((current) => !current);
+                    setMoreOpen(false);
+                  }}
+                />
+                <MenuButton icon={Check} label="Copy room link" onClick={copyRoomLink} />
+                {room.isHost ? (
+                  <>
+                    <MenuButton
+                      icon={room.isLocked ? X : Lock}
+                      label={room.isLocked ? "Unlock room" : "Lock room"}
+                      onClick={() =>
+                        void runRoomAction(
+                          room.isLocked ? "unlock_room" : "lock_room",
+                        )
+                      }
+                    />
+                    <MenuButton
+                      danger
+                      icon={DoorOpen}
+                      label="End room"
+                      onClick={() => void runRoomAction("end_room")}
+                    />
+                  </>
                 ) : null}
-                <button
-                  className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                  disabled={pendingAction === "join"}
-                  onClick={joinRoom}
-                  type="button"
-                >
-                  {pendingAction === "join" ? (
-                    <LoaderCircle className="animate-spin" size={16} />
-                  ) : (
-                    <Mic size={16} />
-                  )}
-                  Join room
-                </button>
               </div>
             ) : null}
           </div>
-
-          <aside className="space-y-4">
-            <section className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-                <Users size={16} />
-                Participants
-              </p>
-              <div className="mt-3 space-y-3">
-                {room.participants.length === 0 ? (
-                  <p className="text-sm leading-6 text-[#34443a]">
-                    No one has joined yet.
-                  </p>
-                ) : null}
-                {room.participants.map((participant) => (
-                  <div
-                    className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-3"
-                    key={participant.userId}
-                  >
-                    <p className="flex items-center gap-2 text-sm font-semibold">
-                      <UserRound size={15} />
-                      {participant.name}
-                    </p>
-                    <p className="mt-1 text-sm text-[#607265]">
-                      {participant.city}
-                    </p>
-                    {participant.voiceIntroUrl ? (
-                      <div className="mt-3">
-                        <VoiceIntroPlayer
-                          durationSeconds={participant.voiceIntroDurationSeconds}
-                          label={`${participant.name} voice intro`}
-                          src={participant.voiceIntroUrl}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </aside>
-        </section>
+          <ControlButton
+            danger
+            icon={DoorOpen}
+            label={room.isHost ? "End" : "Leave"}
+            loading={
+              pendingAction ===
+              `${room.isHost ? "end_room" : "leave_room"}:self`
+            }
+            onClick={() =>
+              void runRoomAction(room.isHost ? "end_room" : "leave_room")
+            }
+          />
+        </div>
       </div>
     </main>
+  );
+}
+
+function ParticipantTile({
+  canModerate,
+  isCurrentUser,
+  isHostViewer,
+  onAction,
+  onSelect,
+  participant,
+  pendingAction,
+}: {
+  canModerate: boolean;
+  isCurrentUser: boolean;
+  isHostViewer: boolean;
+  onAction: (action: RoomAction, targetUserId?: string) => void;
+  onSelect: (participant: VoiceRoomParticipantSummary) => void;
+  participant: VoiceRoomParticipantSummary;
+  pendingAction: string | null;
+}) {
+  const canChangeParticipant =
+    canModerate && !isCurrentUser && participant.role !== "host";
+
+  return (
+    <article
+      className={cx(
+        "rounded-lg border bg-[#fbfaf4] p-3 transition",
+        participant.isSpeaker
+          ? "border-[#176b57] shadow-sm ring-2 ring-[#176b57]/10"
+          : "border-[#e2e6dc]",
+        participant.handRaisedAt && "bg-[#fff9eb]",
+      )}
+    >
+      <button
+        aria-label={`View ${participant.name}'s profile`}
+        className="flex w-full items-center gap-3 text-left"
+        onClick={() => onSelect(participant)}
+        type="button"
+      >
+        {participant.avatarUrl ? (
+          <SafeStorageImage
+            alt={`${participant.name} avatar`}
+            className="h-14 w-14 rounded-full object-cover"
+            height={56}
+            src={participant.avatarUrl}
+            width={56}
+          />
+        ) : (
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#176b57] text-white">
+            <UserRound size={20} />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-[#17201b]">
+            {participant.name}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[#607265]">
+            {participant.city}
+          </span>
+          <span className="mt-2 flex flex-wrap gap-1">
+            {participant.isHost ? <RoleBadge label="Host" /> : null}
+            {!participant.isHost && participant.isModerator ? (
+              <RoleBadge label="Moderator" />
+            ) : null}
+            {participant.isSpeaker ? <RoleBadge label="Speaker" /> : null}
+            {participant.handRaisedAt ? <RoleBadge label="Hand raised" /> : null}
+            {participant.isMuted ? <RoleBadge label="Muted" muted /> : null}
+          </span>
+        </span>
+      </button>
+
+      {canChangeParticipant ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {participant.handRaisedAt ? (
+            <>
+              <SmallAction
+                icon={Check}
+                label="Approve"
+                loading={
+                  pendingAction === `approve_speaker:${participant.userId}`
+                }
+                onClick={() => onAction("approve_speaker", participant.userId)}
+              />
+              <SmallAction
+                icon={X}
+                label="Reject"
+                loading={pendingAction === `reject_speaker:${participant.userId}`}
+                onClick={() => onAction("reject_speaker", participant.userId)}
+              />
+            </>
+          ) : null}
+          {isHostViewer ? (
+            <SmallAction
+              icon={ShieldCheck}
+              label={participant.role === "moderator" ? "Demote" : "Moderate"}
+              loading={
+                pendingAction ===
+                `${
+                  participant.role === "moderator"
+                    ? "demote_moderator"
+                    : "promote_moderator"
+                }:${participant.userId}`
+              }
+              onClick={() =>
+                onAction(
+                  participant.role === "moderator"
+                    ? "demote_moderator"
+                    : "promote_moderator",
+                  participant.userId,
+                )
+              }
+            />
+          ) : null}
+          <SmallAction
+            danger
+            icon={UserMinus}
+            label="Remove"
+            loading={pendingAction === `remove_participant:${participant.userId}`}
+            onClick={() => onAction("remove_participant", participant.userId)}
+          />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function ProfileDrawer({
+  isSelf,
+  onBlock,
+  onClose,
+  onReport,
+  participant,
+  pendingAction,
+}: {
+  isSelf: boolean;
+  onBlock: (participant: VoiceRoomParticipantSummary) => void;
+  onClose: () => void;
+  onReport: (participant: VoiceRoomParticipantSummary) => void;
+  participant: VoiceRoomParticipantSummary;
+  pendingAction: string | null;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 bg-[#17201b]/30 px-4 py-6 backdrop-blur-sm">
+      <aside className="ml-auto flex h-full max-w-md flex-col rounded-lg bg-white p-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {participant.avatarUrl ? (
+              <SafeStorageImage
+                alt={`${participant.name} avatar`}
+                className="h-14 w-14 rounded-full object-cover"
+                height={56}
+                src={participant.avatarUrl}
+                width={56}
+              />
+            ) : (
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#176b57] text-white">
+                <UserRound size={20} />
+              </span>
+            )}
+            <div>
+              <h2 className="text-lg font-semibold">{participant.name}</h2>
+              <p className="text-sm text-[#607265]">{participant.city}</p>
+            </div>
+          </div>
+          <button
+            aria-label="Close participant profile"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-[#607265] transition hover:bg-[#eef7f1]"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {participant.voiceIntroUrl ? (
+          <div className="mt-4">
+            <VoiceIntroPlayer
+              durationSeconds={participant.voiceIntroDurationSeconds}
+              label={`${participant.name} voice intro`}
+              src={participant.voiceIntroUrl}
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-2">
+          <Link
+            className="flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+            href={`/profiles/${participant.profileId}`}
+          >
+            View full profile
+          </Link>
+          {!isSelf ? (
+            <>
+              <button
+                className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6] disabled:opacity-60"
+                disabled={pendingAction === `report:${participant.userId}`}
+                onClick={() => onReport(participant)}
+                type="button"
+              >
+                {pendingAction === `report:${participant.userId}` ? (
+                  <LoaderCircle className="animate-spin" size={16} />
+                ) : (
+                  <ShieldAlert size={16} />
+                )}
+                Report
+              </button>
+              <button
+                className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#ef8f7a] bg-white px-4 text-sm font-semibold text-[#8a3325] transition hover:bg-[#fff5f1] disabled:opacity-60"
+                disabled={pendingAction === `block:${participant.userId}`}
+                onClick={() => onBlock(participant)}
+                type="button"
+              >
+                {pendingAction === `block:${participant.userId}` ? (
+                  <LoaderCircle className="animate-spin" size={16} />
+                ) : (
+                  <ShieldAlert size={16} />
+                )}
+                Block
+              </button>
+            </>
+          ) : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function ControlButton({
+  active = false,
+  danger = false,
+  disabled = false,
+  icon: Icon,
+  label,
+  loading = false,
+  onClick,
+  title,
+}: {
+  active?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  icon: LucideIcon;
+  label: string;
+  loading?: boolean;
+  onClick?: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={cx(
+        "flex min-h-12 flex-col items-center justify-center gap-1 rounded-md border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+        active
+          ? "border-[#176b57] bg-[#e4f4ec] text-[#176b57]"
+          : danger
+            ? "border-[#ef8f7a] bg-white text-[#8a3325] hover:bg-[#fff5f1]"
+            : "border-[#d8ded1] bg-white text-[#34443a] hover:bg-[#f3f0e6]",
+      )}
+      disabled={disabled || loading}
+      onClick={onClick}
+      title={title ?? label}
+      type="button"
+    >
+      {loading ? <LoaderCircle className="animate-spin" size={18} /> : <Icon size={18} />}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function MenuButton({
+  danger = false,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  danger?: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cx(
+        "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold transition",
+        danger
+          ? "text-[#8a3325] hover:bg-[#fff5f1]"
+          : "text-[#34443a] hover:bg-[#eef7f1]",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon size={15} />
+      {label}
+    </button>
+  );
+}
+
+function SmallAction({
+  danger = false,
+  icon: Icon,
+  label,
+  loading = false,
+  onClick,
+}: {
+  danger?: boolean;
+  icon: LucideIcon;
+  label: string;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cx(
+        "inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold transition disabled:opacity-60",
+        danger
+          ? "border border-[#ef8f7a] text-[#8a3325] hover:bg-[#fff5f1]"
+          : "border border-[#cbd4c6] text-[#34443a] hover:bg-[#f3f0e6]",
+      )}
+      disabled={loading}
+      onClick={onClick}
+      type="button"
+    >
+      {loading ? <LoaderCircle className="animate-spin" size={13} /> : <Icon size={13} />}
+      {label}
+    </button>
+  );
+}
+
+function RoleBadge({ label, muted = false }: { label: string; muted?: boolean }) {
+  return (
+    <span
+      className={cx(
+        "rounded-md px-2 py-0.5 text-[11px] font-semibold",
+        muted ? "bg-[#f4e9e2] text-[#8a3325]" : "bg-[#e4f4ec] text-[#176b57]",
+      )}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -244,6 +937,7 @@ function Notice({
           ? "mt-4 rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]"
           : "mt-4 rounded-md border border-[#94c973] bg-white px-3 py-2 text-sm font-semibold text-[#2f5f36]"
       }
+      role={tone === "error" ? "alert" : "status"}
     >
       {message}
     </p>
@@ -284,4 +978,12 @@ function formatDate(value: string) {
 
 function toTitle(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function getFailureMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  return (payload as { error?: string }).error ?? fallback;
 }

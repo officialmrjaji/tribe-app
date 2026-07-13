@@ -6,7 +6,7 @@ describe("discovery integration contract", () => {
   it("keeps production eligibility gates before recommendations", () => {
     const service = readFileSync("src/lib/discovery/service.ts", "utf8");
 
-    assert.match(service, /profile_completion_score >= 80/);
+    assert.match(service, /minimumBasicProfileCompletion/);
     assert.match(service, /minimumDiscoveryPhotoCount/);
     assert.match(service, /profile\.discoverable/);
     assert.match(service, /profile\.visibility !== "private"/);

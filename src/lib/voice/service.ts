@@ -8,8 +8,9 @@ import {
   assertOwnedProfileHasMinimumPhotos,
   type OwnedProfile,
 } from "@/lib/profile/service";
+import { recordModerationAudit } from "@/lib/security/audit";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import type { CreateVoiceRoomInput } from "./schema";
+import type { CreateVoiceRoomInput, VoiceRoomActionInput } from "./schema";
 
 const randomVoiceSessionMs = 2 * 60 * 1000;
 const maxVoiceExtensionMs = 5 * 60 * 1000;
@@ -50,6 +51,7 @@ type VoiceRoomRow = {
   id: string;
   invite_code: string | null;
   language: string | null;
+  locked_at?: string | null;
   max_participants: number;
   room_type: "private" | "public" | "scheduled";
   scheduled_at: string | null;
@@ -61,13 +63,19 @@ type VoiceRoomRow = {
 };
 
 type VoiceRoomParticipantRow = {
+  hand_raised_at?: string | null;
   joined_at: string;
   left_at: string | null;
+  muted_at?: string | null;
   profile_id: string;
-  role: "host" | "listener" | "speaker";
+  removed_at?: string | null;
+  role: VoiceRoomRole;
   room_id: string;
+  speaking_since?: string | null;
   user_id: string;
 };
+
+type VoiceRoomRole = "host" | "listener" | "moderator" | "speaker";
 
 type VoiceContinueVoteRow = {
   created_at: string;
@@ -98,6 +106,17 @@ export type VoiceProfileSummary = {
   voiceIntroUrl: string | null;
 };
 
+export type VoiceRoomParticipantSummary = VoiceProfileSummary & {
+  handRaisedAt: string | null;
+  isHost: boolean;
+  isModerator: boolean;
+  isMuted: boolean;
+  isSpeaker: boolean;
+  joinedAt: string;
+  role: VoiceRoomRole;
+  speakingSince: string | null;
+};
+
 export type VoiceSessionSummary = {
   canReveal: boolean;
   canRequestContinue: boolean;
@@ -123,16 +142,20 @@ export type VoiceRoomSummary = {
   host: VoiceProfileSummary | null;
   id: string;
   isHost: boolean;
+  isLocked: boolean;
   isMember: boolean;
+  isModerator: boolean;
   language: string | null;
   maxParticipants: number;
   participantCount: number;
-  participants: VoiceProfileSummary[];
+  participants: VoiceRoomParticipantSummary[];
   roomType: string;
   scheduledAt: string | null;
   status: string;
   title: string;
   topic: string | null;
+  viewerRole: VoiceRoomRole | null;
+  viewerUserId: string;
 };
 
 export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
@@ -506,12 +529,33 @@ export async function joinVoiceRoom(
     throw new VoiceExperienceError("This voice room is full.", 409);
   }
 
+  if (room.isLocked && !room.isMember && !room.isHost) {
+    throw new VoiceExperienceError("This voice room is locked.", 409);
+  }
+
+  const { data: priorParticipant, error: priorParticipantError } = await supabase
+    .from("voice_room_participants")
+    .select("removed_at")
+    .eq("room_id", room.id)
+    .eq("user_id", ownedProfile.account.id)
+    .maybeSingle();
+
+  if (priorParticipantError) {
+    throw priorParticipantError;
+  }
+
+  if ((priorParticipant as { removed_at: string | null } | null)?.removed_at) {
+    throw new VoiceExperienceError("You cannot rejoin this voice room.", 403);
+  }
+
   const { error } = await supabase.from("voice_room_participants").upsert(
     {
+      hand_raised_at: null,
       left_at: null,
       profile_id: ownedProfile.profile.id,
       role: room.isHost ? "host" : "listener",
       room_id: room.id,
+      speaking_since: null,
       user_id: ownedProfile.account.id,
     },
     { onConflict: "room_id,user_id" },
@@ -520,6 +564,222 @@ export async function joinVoiceRoom(
   if (error) {
     throw error;
   }
+
+  return getVoiceRoom(ownedProfile, roomId);
+}
+
+export async function applyVoiceRoomAction(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+  input: VoiceRoomActionInput,
+) {
+  const supabase = createSupabaseAdminClient();
+  const room = await getVoiceRoom(ownedProfile, roomId);
+  const actor = room.participants.find(
+    (participant) => participant.userId === ownedProfile.account.id,
+  );
+  const isActorHost = room.isHost;
+  const isActorModerator = isActorHost || actor?.role === "moderator";
+  const now = new Date().toISOString();
+
+  if (
+    (room.status === "closed" || room.status === "cancelled") &&
+    input.action !== "leave_room"
+  ) {
+    throw new VoiceExperienceError("This voice room has ended.", 409);
+  }
+
+  if (
+    !actor &&
+    !isActorHost &&
+    input.action !== "lock_room" &&
+    input.action !== "unlock_room" &&
+    input.action !== "end_room"
+  ) {
+    throw new VoiceExperienceError("Join the room before using room controls.", 403);
+  }
+
+  if (input.action === "raise_hand") {
+    if (isActorHost) {
+      throw new VoiceExperienceError("Hosts can already guide the room.", 400);
+    }
+
+    await updateParticipant({
+      roomId,
+      userId: ownedProfile.account.id,
+      values: { hand_raised_at: now },
+    });
+
+    return getVoiceRoom(ownedProfile, roomId);
+  }
+
+  if (input.action === "cancel_raise_hand") {
+    await updateParticipant({
+      roomId,
+      userId: ownedProfile.account.id,
+      values: { hand_raised_at: null },
+    });
+
+    return getVoiceRoom(ownedProfile, roomId);
+  }
+
+  if (input.action === "leave_room") {
+    if (isActorHost) {
+      await closeVoiceRoom({ endedBy: ownedProfile, roomId });
+    } else {
+      await updateParticipant({
+        roomId,
+        userId: ownedProfile.account.id,
+        values: {
+          hand_raised_at: null,
+          left_at: now,
+          speaking_since: null,
+        },
+      });
+    }
+
+    return getVoiceRoom(ownedProfile, roomId).catch(() => room);
+  }
+
+  if (input.action === "lock_room" || input.action === "unlock_room") {
+    assertHost(isActorHost);
+    const { error } = await supabase
+      .from("voice_rooms")
+      .update({
+        locked_at: input.action === "lock_room" ? now : null,
+        updated_at: now,
+      })
+      .eq("id", roomId)
+      .eq("host_user_id", ownedProfile.account.id);
+
+    if (error) {
+      throw error;
+    }
+
+    await auditVoiceRoomAction({
+      action: input.action,
+      ownedProfile,
+      roomId,
+    });
+
+    return getVoiceRoom(ownedProfile, roomId);
+  }
+
+  if (input.action === "end_room") {
+    assertHost(isActorHost);
+    await closeVoiceRoom({ endedBy: ownedProfile, roomId });
+
+    return getVoiceRoom(ownedProfile, roomId).catch(() => room);
+  }
+
+  if (!input.targetUserId) {
+    throw new VoiceExperienceError("Choose a participant first.", 400);
+  }
+
+  const target = room.participants.find(
+    (participant) => participant.userId === input.targetUserId,
+  );
+
+  if (!target) {
+    throw new VoiceExperienceError("Participant not found in this room.", 404);
+  }
+
+  if (target.userId === ownedProfile.account.id) {
+    throw new VoiceExperienceError("Choose another participant for this action.", 400);
+  }
+
+  if (
+    input.action === "approve_speaker" ||
+    input.action === "reject_speaker" ||
+    input.action === "remove_participant"
+  ) {
+    assertModerator(isActorModerator);
+
+    if (!isActorHost && (target.role === "host" || target.role === "moderator")) {
+      throw new VoiceExperienceError(
+        "Moderators cannot change host or moderator status.",
+        403,
+      );
+    }
+  }
+
+  if (
+    input.action === "promote_moderator" ||
+    input.action === "demote_moderator"
+  ) {
+    assertHost(isActorHost);
+
+    if (target.role === "host") {
+      throw new VoiceExperienceError("The host role cannot be changed here.", 403);
+    }
+  }
+
+  if (input.action === "approve_speaker") {
+    await updateParticipant({
+      roomId,
+      userId: target.userId,
+      values: {
+        hand_raised_at: null,
+        role: "speaker",
+        speaking_since: now,
+      },
+    });
+  }
+
+  if (input.action === "reject_speaker") {
+    await updateParticipant({
+      roomId,
+      userId: target.userId,
+      values: {
+        hand_raised_at: null,
+        role: target.role === "moderator" ? "moderator" : "listener",
+        speaking_since: null,
+      },
+    });
+  }
+
+  if (input.action === "remove_participant") {
+    await updateParticipant({
+      roomId,
+      userId: target.userId,
+      values: {
+        hand_raised_at: null,
+        left_at: now,
+        removed_at: now,
+        speaking_since: null,
+      },
+    });
+  }
+
+  if (input.action === "promote_moderator") {
+    await updateParticipant({
+      roomId,
+      userId: target.userId,
+      values: {
+        hand_raised_at: null,
+        role: "moderator",
+        speaking_since: null,
+      },
+    });
+  }
+
+  if (input.action === "demote_moderator") {
+    await updateParticipant({
+      roomId,
+      userId: target.userId,
+      values: {
+        role: "listener",
+        speaking_since: null,
+      },
+    });
+  }
+
+  await auditVoiceRoomAction({
+    action: input.action,
+    ownedProfile,
+    roomId,
+    targetUserId: target.userId,
+  });
 
   return getVoiceRoom(ownedProfile, roomId);
 }
@@ -584,6 +844,36 @@ async function hydrateVoiceRooms(
     const roomParticipants = participants.filter(
       (participant) => participant.room_id === room.id,
     );
+    const participantSummaries = roomParticipants
+      .map((participant) => {
+        const profile = profilesByUserId.get(participant.user_id);
+
+        if (!profile) {
+          return null;
+        }
+
+        return {
+          ...profile,
+          handRaisedAt: participant.hand_raised_at ?? null,
+          isHost: participant.role === "host",
+          isModerator:
+            participant.role === "host" || participant.role === "moderator",
+          isMuted: Boolean(participant.muted_at),
+          isSpeaker: participant.role === "speaker" || participant.role === "host",
+          joinedAt: participant.joined_at,
+          role: participant.role,
+          speakingSince: participant.speaking_since ?? null,
+        } satisfies VoiceRoomParticipantSummary;
+      })
+      .filter(
+        (participant): participant is VoiceRoomParticipantSummary =>
+          Boolean(participant),
+      )
+      .sort(sortVoiceParticipants);
+    const viewerParticipant =
+      participantSummaries.find(
+        (participant) => participant.userId === ownedProfile.account.id,
+      ) ?? null;
 
     return {
       createdAt: room.created_at,
@@ -591,22 +881,51 @@ async function hydrateVoiceRooms(
       host: profilesByUserId.get(room.host_user_id) ?? null,
       id: room.id,
       isHost: room.host_user_id === ownedProfile.account.id,
+      isLocked: Boolean(room.locked_at),
       isMember: roomParticipants.some(
         (participant) => participant.user_id === ownedProfile.account.id,
       ),
+      isModerator:
+        room.host_user_id === ownedProfile.account.id ||
+        viewerParticipant?.role === "moderator",
       language: room.language,
       maxParticipants: room.max_participants,
       participantCount: roomParticipants.length,
-      participants: roomParticipants
-        .map((participant) => profilesByUserId.get(participant.user_id))
-        .filter((profile): profile is VoiceProfileSummary => Boolean(profile)),
+      participants: participantSummaries,
       roomType: room.room_type,
       scheduledAt: room.scheduled_at,
       status: room.status,
       title: room.title,
       topic: room.topic,
+      viewerRole: viewerParticipant?.role ?? null,
+      viewerUserId: ownedProfile.account.id,
     } satisfies VoiceRoomSummary;
   });
+}
+
+function sortVoiceParticipants(
+  left: VoiceRoomParticipantSummary,
+  right: VoiceRoomParticipantSummary,
+) {
+  const roleRank: Record<VoiceRoomRole, number> = {
+    host: 0,
+    moderator: 1,
+    speaker: 2,
+    listener: 3,
+  };
+
+  if (roleRank[left.role] !== roleRank[right.role]) {
+    return roleRank[left.role] - roleRank[right.role];
+  }
+
+  if (Boolean(left.handRaisedAt) !== Boolean(right.handRaisedAt)) {
+    return left.handRaisedAt ? -1 : 1;
+  }
+
+  return (
+    new Date(left.joinedAt).getTime() - new Date(right.joinedAt).getTime() ||
+    left.name.localeCompare(right.name)
+  );
 }
 
 async function canAccessRoom(ownedProfile: OwnedProfile, room: VoiceRoomRow) {
@@ -628,6 +947,115 @@ async function canAccessRoom(ownedProfile: OwnedProfile, room: VoiceRoomRow) {
   }
 
   return Boolean(data);
+}
+
+async function updateParticipant({
+  roomId,
+  userId,
+  values,
+}: {
+  roomId: string;
+  userId: string;
+  values: Partial<Pick<
+    VoiceRoomParticipantRow,
+    | "hand_raised_at"
+    | "left_at"
+    | "removed_at"
+    | "role"
+    | "speaking_since"
+  >>;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("voice_room_participants")
+    .update(values)
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .is("left_at", null);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function closeVoiceRoom({
+  endedBy,
+  roomId,
+}: {
+  endedBy: OwnedProfile;
+  roomId: string;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("voice_rooms")
+    .update({
+      ends_at: now,
+      status: "closed",
+      updated_at: now,
+    })
+    .eq("id", roomId)
+    .eq("host_user_id", endedBy.account.id);
+
+  if (error) {
+    throw error;
+  }
+
+  const { error: participantError } = await supabase
+    .from("voice_room_participants")
+    .update({
+      hand_raised_at: null,
+      left_at: now,
+      speaking_since: null,
+    })
+    .eq("room_id", roomId)
+    .is("left_at", null);
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  await auditVoiceRoomAction({
+    action: "end_room",
+    ownedProfile: endedBy,
+    roomId,
+  });
+}
+
+function assertHost(isHost: boolean) {
+  if (!isHost) {
+    throw new VoiceExperienceError("Only the host can use this room control.", 403);
+  }
+}
+
+function assertModerator(isModerator: boolean) {
+  if (!isModerator) {
+    throw new VoiceExperienceError(
+      "Only the host or moderators can use this room control.",
+      403,
+    );
+  }
+}
+
+async function auditVoiceRoomAction({
+  action,
+  ownedProfile,
+  roomId,
+  targetUserId,
+}: {
+  action: string;
+  ownedProfile: OwnedProfile;
+  roomId: string;
+  targetUserId?: string;
+}) {
+  await recordModerationAudit({
+    action: `voice_room_${action}`,
+    actorClerkUserId: ownedProfile.account.clerk_user_id,
+    actorUserId: ownedProfile.account.id,
+    metadata: { roomId, targetUserId: targetUserId ?? null },
+    targetId: targetUserId ?? roomId,
+    targetType: targetUserId ? "user" : "voice_room",
+  });
 }
 
 async function getProfileSummaryByUserId(userId: string) {

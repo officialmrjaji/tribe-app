@@ -6,13 +6,15 @@ export type RealtimeInvalidationEvent =
   | "connections"
   | "messages"
   | "notifications"
-  | "square";
+  | "square"
+  | "voice";
 
 const realtimeEvents: RealtimeInvalidationEvent[] = [
   "connections",
   "messages",
   "notifications",
   "square",
+  "voice",
 ];
 const listeners = new Map<
   RealtimeInvalidationEvent,

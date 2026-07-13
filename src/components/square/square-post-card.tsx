@@ -502,11 +502,20 @@ export function SquarePostCard({
   }
 
   async function likeComment(comment: SquareComment) {
+    if (pendingAction === `comment-like:${comment.id}`) {
+      return;
+    }
+
     const nextLiked = !comment.isLiked;
     const actionId = `comment-like:${comment.id}`;
     setPendingAction(actionId);
     setError("");
     setNotice("");
+    updateComment(comment.id, (current) => ({
+      ...current,
+      isLiked: nextLiked,
+      likeCount: Math.max(0, current.likeCount + (nextLiked ? 1 : -1)),
+    }));
 
     try {
       const response = await fetch(`/api/square/comments/${comment.id}/like`, {
@@ -528,9 +537,14 @@ export function SquarePostCard({
         likeCount:
           typeof payload?.likeCount === "number"
             ? payload.likeCount
-            : Math.max(0, current.likeCount + (nextLiked ? 1 : -1)),
+            : current.likeCount,
       }));
     } catch (likeError) {
+      updateComment(comment.id, (current) => ({
+        ...current,
+        isLiked: comment.isLiked,
+        likeCount: comment.likeCount,
+      }));
       setError(
         likeError instanceof Error
           ? likeError.message
@@ -663,6 +677,104 @@ export function SquarePostCard({
         reportError instanceof Error
           ? reportError.message
           : "Comment could not be reported.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function hideCommentAuthor(comment: SquareComment) {
+    if (!comment.author.userId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Hide this member from your Square feed?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `comment-hide:${comment.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        `/api/square/users/${comment.author.userId}/mute`,
+        { method: "POST" },
+      );
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be hidden."),
+        );
+      }
+
+      setComments((currentComments) =>
+        currentComments.filter(
+          (currentComment) =>
+            currentComment.author.userId !== comment.author.userId,
+        ),
+      );
+      setNotice("That member is hidden from your Square feed.");
+    } catch (hideError) {
+      setError(
+        hideError instanceof Error ? hideError.message : "Member could not be hidden.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function blockCommentAuthor(comment: SquareComment) {
+    if (!comment.author.profileId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Block this member? You will no longer be able to interact with each other.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `comment-block:${comment.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/profile/block", {
+        body: JSON.stringify({
+          profileId: comment.author.profileId,
+          reason: "Square safety action",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be blocked."),
+        );
+      }
+
+      setComments((currentComments) =>
+        currentComments.filter(
+          (currentComment) =>
+            currentComment.author.profileId !== comment.author.profileId,
+        ),
+      );
+      setNotice("Member blocked successfully.");
+    } catch (blockError) {
+      setError(
+        blockError instanceof Error
+          ? blockError.message
+          : "Member could not be blocked.",
       );
     } finally {
       setPendingAction("");
@@ -1035,9 +1147,11 @@ export function SquarePostCard({
               {commentTree.map((comment) => (
                 <CommentItem
                   comment={comment}
+                  blockCommentAuthor={blockCommentAuthor}
                   deleteComment={deleteComment}
                   editingCommentBody={editingCommentBody}
                   editingCommentId={editingCommentId}
+                  hideCommentAuthor={hideCommentAuthor}
                   likeComment={likeComment}
                   pendingAction={pendingAction}
                   reportComment={reportComment}
@@ -1062,11 +1176,13 @@ export function SquarePostCard({
 }
 
 function CommentItem({
+  blockCommentAuthor,
   comment,
   deleteComment,
   depth = 0,
   editingCommentBody,
   editingCommentId,
+  hideCommentAuthor,
   likeComment,
   pendingAction,
   reportComment,
@@ -1079,11 +1195,13 @@ function CommentItem({
   setReplyingToCommentId,
   submitComment,
 }: {
+  blockCommentAuthor: (comment: SquareComment) => void;
   comment: CommentNode;
   deleteComment: (comment: SquareComment) => void;
   depth?: number;
   editingCommentBody: string;
   editingCommentId: string;
+  hideCommentAuthor: (comment: SquareComment) => void;
   likeComment: (comment: SquareComment) => void;
   pendingAction: string;
   reportComment: (comment: SquareComment) => void;
@@ -1114,7 +1232,7 @@ function CommentItem({
 
   function handleLikeComment() {
     setLikePulse(true);
-    window.setTimeout(() => setLikePulse(false), 420);
+    window.setTimeout(() => setLikePulse(false), 200);
     likeComment(comment);
   }
 
@@ -1169,35 +1287,6 @@ function CommentItem({
                 {comment.editedAt ? " / Edited" : ""}
               </span>
             </div>
-            <MoreMenu
-              items={
-                comment.isMine
-                  ? [
-                      {
-                        icon: Edit3,
-                        label: "Edit comment",
-                        onClick: () => {
-                          setEditingCommentId(comment.id);
-                          setEditingCommentBody(comment.body);
-                        },
-                      },
-                      {
-                        danger: true,
-                        icon: Trash2,
-                        label: "Delete comment",
-                        onClick: () => deleteComment(comment),
-                      },
-                    ]
-                  : [
-                      {
-                        icon: Flag,
-                        label: "Report comment",
-                        onClick: () => reportComment(comment),
-                      },
-                    ]
-              }
-              label="More comment actions"
-            />
           </div>
 
           {isEditing ? (
@@ -1268,6 +1357,48 @@ function CommentItem({
                 setReplyingToCommentId(isReplying ? "" : comment.id)
               }
             />
+            <MoreMenu
+              items={
+                comment.isMine
+                  ? [
+                      {
+                        icon: Edit3,
+                        label: "Edit comment",
+                        onClick: () => {
+                          setEditingCommentId(comment.id);
+                          setEditingCommentBody(comment.body);
+                        },
+                      },
+                      {
+                        danger: true,
+                        icon: Trash2,
+                        label: "Delete comment",
+                        onClick: () => deleteComment(comment),
+                      },
+                    ]
+                  : [
+                      {
+                        icon: Flag,
+                        label: "Report comment",
+                        onClick: () => reportComment(comment),
+                      },
+                      {
+                        disabled: !comment.author.userId,
+                        icon: UserX,
+                        label: "Hide member",
+                        onClick: () => hideCommentAuthor(comment),
+                      },
+                      {
+                        danger: true,
+                        disabled: !comment.author.profileId,
+                        icon: ShieldCheck,
+                        label: "Block member",
+                        onClick: () => blockCommentAuthor(comment),
+                      },
+                    ]
+              }
+              label="More comment actions"
+            />
           </div>
 
           {isReplying ? (
@@ -1318,10 +1449,12 @@ function CommentItem({
               {visibleReplies.map((reply) => (
                 <CommentItem
                   comment={reply}
+                  blockCommentAuthor={blockCommentAuthor}
                   deleteComment={deleteComment}
                   depth={depth + 1}
                   editingCommentBody={editingCommentBody}
                   editingCommentId={editingCommentId}
+                  hideCommentAuthor={hideCommentAuthor}
                   likeComment={likeComment}
                   pendingAction={pendingAction}
                   reportComment={reportComment}
