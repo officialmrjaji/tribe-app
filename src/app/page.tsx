@@ -398,61 +398,43 @@ export default function Home() {
                 Find people by pace, values, and social texture.
               </p>
             </div>
-            <button
-              aria-expanded={filtersOpen}
-              aria-label="Open People filters"
-              className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-              onClick={() => setFiltersOpen((current) => !current)}
-              type="button"
-            >
-              <SlidersHorizontal size={17} />
-              Filters
-              {activeFilterCount ? (
-                <span className="rounded-md bg-[#17251f] px-2 py-0.5 text-xs text-white">
-                  {activeFilterCount}
-                </span>
-              ) : null}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                aria-expanded={filtersOpen}
+                aria-label="Open People filters"
+                className="flex h-11 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                onClick={() => setFiltersOpen((current) => !current)}
+                type="button"
+              >
+                <SlidersHorizontal size={17} />
+                Filters
+                {activeFilterCount ? (
+                  <span className="rounded-md bg-[#17251f] px-2 py-0.5 text-xs text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+              <Link
+                aria-label="Open Voice Rooms"
+                className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
+                href="/voice"
+              >
+                <Mic size={17} />
+                Voice
+              </Link>
+            </div>
           </header>
 
-          <section className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-            {filtersOpen ? (
+          {filtersOpen ? (
+            <section className="mt-5">
               <PeopleFilterPanel
                 draft={filterDraft}
                 onApply={applyFilters}
                 onChange={setFilterDraft}
                 onReset={resetFilters}
               />
-            ) : (
-              <div className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm">
-                <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-                  <SlidersHorizontal size={16} />
-                  People filters
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                  Use basic filters lightly. Square and community spaces stay
-                  open to everyone regardless of discovery preferences.
-                </p>
-              </div>
-            )}
-
-            <Link
-              className="rounded-lg border border-[#d8ded1] bg-[#17251f] p-4 text-white shadow-sm transition hover:bg-[#253b32]"
-              href="/voice"
-            >
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#dce7e2]">
-                <Mic size={16} />
-                Voice Rooms
-              </p>
-              <h3 className="mt-2 text-lg font-semibold">
-                Try a voice-first match.
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-[#dce7e2]">
-                Start with a short conversation, then reveal profiles when the
-                moment feels right.
-              </p>
-            </Link>
-          </section>
+            </section>
+          ) : null}
 
           {actionError ? (
             <ActionNotice message={actionError} tone="error" />

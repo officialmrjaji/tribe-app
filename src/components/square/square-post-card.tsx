@@ -502,11 +502,20 @@ export function SquarePostCard({
   }
 
   async function likeComment(comment: SquareComment) {
+    if (pendingAction === `comment-like:${comment.id}`) {
+      return;
+    }
+
     const nextLiked = !comment.isLiked;
     const actionId = `comment-like:${comment.id}`;
     setPendingAction(actionId);
     setError("");
     setNotice("");
+    updateComment(comment.id, (current) => ({
+      ...current,
+      isLiked: nextLiked,
+      likeCount: Math.max(0, current.likeCount + (nextLiked ? 1 : -1)),
+    }));
 
     try {
       const response = await fetch(`/api/square/comments/${comment.id}/like`, {
@@ -528,9 +537,14 @@ export function SquarePostCard({
         likeCount:
           typeof payload?.likeCount === "number"
             ? payload.likeCount
-            : Math.max(0, current.likeCount + (nextLiked ? 1 : -1)),
+            : current.likeCount,
       }));
     } catch (likeError) {
+      updateComment(comment.id, (current) => ({
+        ...current,
+        isLiked: comment.isLiked,
+        likeCount: comment.likeCount,
+      }));
       setError(
         likeError instanceof Error
           ? likeError.message
@@ -663,6 +677,104 @@ export function SquarePostCard({
         reportError instanceof Error
           ? reportError.message
           : "Comment could not be reported.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function hideCommentAuthor(comment: SquareComment) {
+    if (!comment.author.userId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Hide this member from your Square feed?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `comment-hide:${comment.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(
+        `/api/square/users/${comment.author.userId}/mute`,
+        { method: "POST" },
+      );
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be hidden."),
+        );
+      }
+
+      setComments((currentComments) =>
+        currentComments.filter(
+          (currentComment) =>
+            currentComment.author.userId !== comment.author.userId,
+        ),
+      );
+      setNotice("That member is hidden from your Square feed.");
+    } catch (hideError) {
+      setError(
+        hideError instanceof Error ? hideError.message : "Member could not be hidden.",
+      );
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function blockCommentAuthor(comment: SquareComment) {
+    if (!comment.author.profileId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Block this member? You will no longer be able to interact with each other.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const actionId = `comment-block:${comment.id}`;
+    setPendingAction(actionId);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/profile/block", {
+        body: JSON.stringify({
+          profileId: comment.author.profileId,
+          reason: "Square safety action",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Member could not be blocked."),
+        );
+      }
+
+      setComments((currentComments) =>
+        currentComments.filter(
+          (currentComment) =>
+            currentComment.author.profileId !== comment.author.profileId,
+        ),
+      );
+      setNotice("Member blocked successfully.");
+    } catch (blockError) {
+      setError(
+        blockError instanceof Error
+          ? blockError.message
+          : "Member could not be blocked.",
       );
     } finally {
       setPendingAction("");
@@ -1035,9 +1147,11 @@ export function SquarePostCard({
               {commentTree.map((comment) => (
                 <CommentItem
                   comment={comment}
+                  blockCommentAuthor={blockCommentAuthor}
                   deleteComment={deleteComment}
                   editingCommentBody={editingCommentBody}
                   editingCommentId={editingCommentId}
+                  hideCommentAuthor={hideCommentAuthor}
                   likeComment={likeComment}
                   pendingAction={pendingAction}
                   reportComment={reportComment}
@@ -1055,14 +1169,6 @@ export function SquarePostCard({
             </div>
           )}
 
-          {currentPost.commentCount > comments.length ? (
-            <Link
-              className="mt-3 inline-flex text-sm font-semibold text-[#176b57] transition hover:text-[#125744]"
-              href={`/square/posts/${currentPost.id}`}
-            >
-              View full discussion
-            </Link>
-          ) : null}
         </section>
       ) : null}
     </article>
@@ -1070,11 +1176,13 @@ export function SquarePostCard({
 }
 
 function CommentItem({
+  blockCommentAuthor,
   comment,
   deleteComment,
   depth = 0,
   editingCommentBody,
   editingCommentId,
+  hideCommentAuthor,
   likeComment,
   pendingAction,
   reportComment,
@@ -1087,11 +1195,13 @@ function CommentItem({
   setReplyingToCommentId,
   submitComment,
 }: {
+  blockCommentAuthor: (comment: SquareComment) => void;
   comment: CommentNode;
   deleteComment: (comment: SquareComment) => void;
   depth?: number;
   editingCommentBody: string;
   editingCommentId: string;
+  hideCommentAuthor: (comment: SquareComment) => void;
   likeComment: (comment: SquareComment) => void;
   pendingAction: string;
   reportComment: (comment: SquareComment) => void;
@@ -1108,35 +1218,58 @@ function CommentItem({
 }) {
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingToCommentId === comment.id;
+  const [bodyExpanded, setBodyExpanded] = useState(false);
+  const [requestedReplyCount, setRequestedReplyCount] = useState(2);
+  const [likePulse, setLikePulse] = useState(false);
+  const visibleReplyCount = Math.min(comment.replies.length, requestedReplyCount);
+  const visibleReplies = comment.replies.slice(0, visibleReplyCount);
+  const remainingReplyCount = Math.max(
+    0,
+    comment.replies.length - visibleReplyCount,
+  );
+  const replyHandle = formatMentionHandle(comment.author.name);
+  const shouldShowReplyConnector = depth > 0;
+
+  function handleLikeComment() {
+    setLikePulse(true);
+    window.setTimeout(() => setLikePulse(false), 200);
+    likeComment(comment);
+  }
 
   return (
     <div
       className={cx(
-        "rounded-md px-3 py-3",
-        depth === 0
-          ? "border border-[#dcebe4] bg-white shadow-sm"
-          : "border-l-2 border-[#9cc7b7] bg-[#f8fcf9]",
+        "relative transition-all duration-200",
+        shouldShowReplyConnector && "pl-5",
       )}
       id={`comment-${comment.id}`}
-      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 16 : 0 }}
+      style={{ marginLeft: depth > 0 ? Math.min(depth, 2) * 12 : 0 }}
     >
-      <div className="flex items-start gap-3">
+      {shouldShowReplyConnector ? (
+        <span className="absolute bottom-2 left-2 top-2 w-px rounded-full bg-[#c9ddd3]" />
+      ) : null}
+      <div
+        className={cx(
+          "group flex items-start gap-3 rounded-md px-1 py-2 transition-all duration-200",
+          isReplying && "bg-[#eef7f1] ring-1 ring-[#9cc7b7]/60",
+        )}
+      >
         {comment.author.avatarUrl ? (
           <SafeStorageImage
             alt={`${comment.author.name} avatar`}
-            className="h-8 w-8 rounded-md object-cover"
+            className="h-8 w-8 shrink-0 rounded-full object-cover"
             height={32}
             src={comment.author.avatarUrl}
             width={32}
           />
         ) : (
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#176b57] text-white">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#176b57] text-white">
             <UserRound size={14} />
           </span>
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               {comment.author.profileHref ? (
                 <Link
                   className="text-sm font-semibold text-[#17201b] transition hover:text-[#477060]"
@@ -1149,40 +1282,11 @@ function CommentItem({
                   {comment.author.name}
                 </p>
               )}
-              <span className="text-xs font-semibold uppercase text-[#477060]">
-                {formatDate(comment.createdAt)}
+              <span className="text-xs font-medium text-[#607265]">
+                {formatRelativeTime(comment.createdAt)}
                 {comment.editedAt ? " / Edited" : ""}
               </span>
             </div>
-            <MoreMenu
-              items={
-                comment.isMine
-                  ? [
-                      {
-                        icon: Edit3,
-                        label: "Edit comment",
-                        onClick: () => {
-                          setEditingCommentId(comment.id);
-                          setEditingCommentBody(comment.body);
-                        },
-                      },
-                      {
-                        danger: true,
-                        icon: Trash2,
-                        label: "Delete comment",
-                        onClick: () => deleteComment(comment),
-                      },
-                    ]
-                  : [
-                      {
-                        icon: Flag,
-                        label: "Report comment",
-                        onClick: () => reportComment(comment),
-                      },
-                    ]
-              }
-              label="More comment actions"
-            />
           </div>
 
           {isEditing ? (
@@ -1223,20 +1327,27 @@ function CommentItem({
               </div>
             </form>
           ) : (
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#34443a]">
-              <RichInlineText text={comment.body} />
-            </p>
+            <CommentBody
+              expanded={bodyExpanded}
+              onToggle={() => setBodyExpanded((current) => !current)}
+              text={comment.body}
+            />
           )}
 
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-3">
             <MiniActionButton
               active={comment.isLiked}
               busy={pendingAction === `comment-like:${comment.id}`}
               icon={Heart}
-              label={`${comment.likeCount} Like${
-                comment.likeCount === 1 ? "" : "s"
-              }`}
-              onClick={() => likeComment(comment)}
+              label={
+                comment.likeCount > 0
+                  ? `${comment.isLiked ? "Liked" : "Like"} ${comment.likeCount}`
+                  : comment.isLiked
+                    ? "Liked"
+                    : "Like"
+              }
+              onClick={handleLikeComment}
+              pulse={likePulse}
             />
             <MiniActionButton
               active={isReplying}
@@ -1246,55 +1357,104 @@ function CommentItem({
                 setReplyingToCommentId(isReplying ? "" : comment.id)
               }
             />
+            <MoreMenu
+              items={
+                comment.isMine
+                  ? [
+                      {
+                        icon: Edit3,
+                        label: "Edit comment",
+                        onClick: () => {
+                          setEditingCommentId(comment.id);
+                          setEditingCommentBody(comment.body);
+                        },
+                      },
+                      {
+                        danger: true,
+                        icon: Trash2,
+                        label: "Delete comment",
+                        onClick: () => deleteComment(comment),
+                      },
+                    ]
+                  : [
+                      {
+                        icon: Flag,
+                        label: "Report comment",
+                        onClick: () => reportComment(comment),
+                      },
+                      {
+                        disabled: !comment.author.userId,
+                        icon: UserX,
+                        label: "Hide member",
+                        onClick: () => hideCommentAuthor(comment),
+                      },
+                      {
+                        danger: true,
+                        disabled: !comment.author.profileId,
+                        icon: ShieldCheck,
+                        label: "Block member",
+                        onClick: () => blockCommentAuthor(comment),
+                      },
+                    ]
+              }
+              label="More comment actions"
+            />
           </div>
 
           {isReplying ? (
             <form
-              className="mt-3 flex flex-col gap-2 sm:flex-row"
+              className="mt-3 rounded-md bg-white/80 px-3 py-2 ring-1 ring-[#dcebe4] transition-all duration-200"
               onSubmit={(event) => {
                 event.preventDefault();
                 void submitComment(comment.id);
               }}
             >
-              <textarea
-                className="min-h-10 flex-1 resize-none rounded-md border border-[#c9ddd3] bg-white px-3 py-2 text-sm leading-6 outline-none transition focus:border-[#176b57] focus:ring-2 focus:ring-[#176b57]/15"
-                maxLength={1000}
-                onChange={(event) =>
-                  setReplyDrafts((currentDrafts) => ({
-                    ...currentDrafts,
-                    [comment.id]: event.target.value,
-                  }))
-                }
-                placeholder="Reply thoughtfully. Use @name to mention someone."
-                value={replyDrafts[comment.id] ?? ""}
-              />
-              <button
-                className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#176b57] px-3 text-sm font-semibold text-white transition hover:bg-[#125744] disabled:opacity-60"
-                disabled={
-                  pendingAction === `reply:${comment.id}` ||
-                  !replyDrafts[comment.id]?.trim()
-                }
-                type="submit"
-              >
-                {pendingAction === `reply:${comment.id}` ? (
-                  <LoaderCircle className="animate-spin" size={15} />
-                ) : (
-                  <Send size={15} />
-                )}
-                Reply
-              </button>
+              <p className="mb-2 text-xs font-semibold text-[#477060]">
+                Replying to {replyHandle}
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <textarea
+                  className="min-h-10 flex-1 resize-none rounded-md border border-[#c9ddd3] bg-white px-3 py-2 text-sm leading-6 outline-none transition focus:border-[#176b57] focus:ring-2 focus:ring-[#176b57]/15"
+                  maxLength={1000}
+                  onChange={(event) =>
+                    setReplyDrafts((currentDrafts) => ({
+                      ...currentDrafts,
+                      [comment.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Write a reply..."
+                  value={replyDrafts[comment.id] ?? ""}
+                />
+                <button
+                  className="flex h-10 items-center justify-center gap-2 rounded-md bg-[#176b57] px-3 text-sm font-semibold text-white transition hover:bg-[#125744] disabled:opacity-60"
+                  disabled={
+                    pendingAction === `reply:${comment.id}` ||
+                    !replyDrafts[comment.id]?.trim()
+                  }
+                  type="submit"
+                >
+                  {pendingAction === `reply:${comment.id}` ? (
+                    <LoaderCircle className="animate-spin" size={15} />
+                  ) : (
+                    <Send size={15} />
+                  )}
+                  Reply
+                </button>
+              </div>
             </form>
           ) : null}
 
           {comment.replies.length ? (
-            <div className="mt-3 space-y-2 border-l border-[#dcebe4] pl-3">
-              {comment.replies.map((reply) => (
+            <div className="mt-2 space-y-1 transition-all duration-200">
+              {visibleReplies.map((reply) => (
                 <CommentItem
                   comment={reply}
+                  blockCommentAuthor={blockCommentAuthor}
                   deleteComment={deleteComment}
                   depth={depth + 1}
                   editingCommentBody={editingCommentBody}
                   editingCommentId={editingCommentId}
+                  hideCommentAuthor={hideCommentAuthor}
                   likeComment={likeComment}
                   pendingAction={pendingAction}
                   reportComment={reportComment}
@@ -1309,10 +1469,65 @@ function CommentItem({
                   key={reply.id}
                 />
               ))}
+              {remainingReplyCount > 0 ? (
+                <button
+                  className="ml-5 mt-1 inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold text-[#176b57] transition hover:bg-[#eef7f1]"
+                  onClick={() =>
+                    setRequestedReplyCount((current) =>
+                      Math.min(comment.replies.length, current + 3),
+                    )
+                  }
+                  type="button"
+                >
+                  {visibleReplyCount === 0
+                    ? `View ${remainingReplyCount} replies`
+                    : `View more replies (${remainingReplyCount})`}
+                </button>
+              ) : comment.replies.length > 2 ? (
+                <button
+                  className="ml-5 mt-1 inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold text-[#607265] transition hover:bg-[#eef7f1]"
+                  onClick={() => setRequestedReplyCount(2)}
+                  type="button"
+                >
+                  Hide replies
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CommentBody({
+  expanded,
+  onToggle,
+  text,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  text: string;
+}) {
+  const normalizedText = text.trim();
+  const shouldCollapse = normalizedText.length > 260;
+  const displayText =
+    shouldCollapse && !expanded
+      ? `${normalizedText.slice(0, 260).trim()}...`
+      : normalizedText;
+
+  return (
+    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#34443a] transition-all duration-200">
+      <RichInlineText text={displayText} />
+      {shouldCollapse ? (
+        <button
+          className="ml-1 font-semibold text-[#176b57] transition hover:text-[#125744]"
+          onClick={onToggle}
+          type="button"
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1431,6 +1646,7 @@ function MiniActionButton({
   icon: Icon,
   label,
   onClick,
+  pulse = false,
   tone = "default",
 }: {
   active?: boolean;
@@ -1438,6 +1654,7 @@ function MiniActionButton({
   icon: LucideIcon;
   label: string;
   onClick: () => void;
+  pulse?: boolean;
   tone?: "danger" | "default";
 }) {
   return (
@@ -1449,6 +1666,7 @@ function MiniActionButton({
           : tone === "danger"
             ? "text-[#8a3325] hover:bg-[#fff5f1]"
             : "text-[#477060] hover:bg-[#eef7f1]",
+        pulse && "scale-105 text-[#b6384a]",
       )}
       disabled={busy}
       onClick={onClick}
@@ -1457,7 +1675,13 @@ function MiniActionButton({
       {busy ? (
         <LoaderCircle className="animate-spin" size={13} />
       ) : (
-        <Icon size={13} />
+        <Icon
+          className={cx(
+            "transition-transform duration-200",
+            pulse && "scale-125 fill-current",
+          )}
+          size={13}
+        />
       )}
       {label}
     </button>
@@ -1586,6 +1810,50 @@ function getFailureMessage(payload: unknown, fallback: string) {
   return (payload as ApiErrorPayload).error ?? fallback;
 }
 
+function formatMentionHandle(name: string) {
+  const handle = name.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32);
+
+  return handle ? `@${handle}` : "@member";
+}
+
+function formatRelativeTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Recently";
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+  if (diffMinutes < 1) {
+    return "now";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24 && isSameDay(date, now)) {
+    return `${diffHours}h`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  if (isSameDay(date, yesterday)) {
+    return "Yesterday";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
 function formatDate(value: string) {
   const date = new Date(value);
 
@@ -1599,4 +1867,12 @@ function formatDate(value: string) {
     minute: "2-digit",
     month: "short",
   }).format(date);
+}
+
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }

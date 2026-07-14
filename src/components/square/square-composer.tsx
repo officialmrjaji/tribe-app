@@ -3,7 +3,6 @@
 import {
   ArrowLeft,
   Camera,
-  Check,
   HelpCircle,
   LoaderCircle,
   MessageSquareText,
@@ -11,7 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   squarePostTypeLabels,
   squarePostTypeValues,
@@ -41,21 +40,6 @@ export function SquareComposer() {
   const [error, setError] = useState("");
 
   const isAnonymousMode = postType === "anonymous_thought";
-  const helperText = useMemo(() => {
-    if (isAnonymousMode) {
-      return "Anonymous posts are text-only, rate-limited, and still visible to moderators.";
-    }
-
-    if (postType === "poll") {
-      return "Polls are single-choice for MVP and work best with 2 to 4 calm options.";
-    }
-
-    if (postType === "photo") {
-      return "Photo posts support one image for MVP. Keep it activity, place, or recommendation focused.";
-    }
-
-    return "Use Square for context, questions, recommendations, and thoughtful social signals.";
-  }, [isAnonymousMode, postType]);
 
   function updatePostType(nextType: SquarePostType) {
     setPostType(nextType);
@@ -270,10 +254,6 @@ export function SquareComposer() {
             />
           </label>
 
-          <p className="rounded-md border border-[#e2e6dc] bg-[#fbfaf4] px-3 py-2 text-sm leading-6 text-[#607265]">
-            {helperText}
-          </p>
-
           {error ? (
             <p
               className="rounded-md border border-[#ef8f7a] bg-white px-3 py-2 text-sm font-semibold text-[#8a3325]"
@@ -295,12 +275,6 @@ export function SquareComposer() {
             )}
             Publish to Square
           </button>
-
-          <p className="flex items-start gap-2 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] px-3 py-2 text-sm leading-6 text-[#34443a]">
-            <Check className="mt-1 shrink-0 text-[#587d62]" size={15} />
-            Square is for thoughtful context. Reports, blocks, mutes, and rate
-            limits are active from the start.
-          </p>
         </form>
       </div>
     </main>

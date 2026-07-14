@@ -17,6 +17,6 @@ export async function GET() {
 
     return NextResponse.json(result);
   } catch (error) {
-    return squareErrorResponse(error, "Trending discussions could not load.");
+    return squareErrorResponse(error, "Trending could not load.");
   }
 }

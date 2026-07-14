@@ -3,9 +3,9 @@
 import {
   ArrowLeft,
   Bell,
-  Heart,
   LoaderCircle,
   MessageCircle,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -175,10 +175,10 @@ export default function MessagesInbox() {
           <nav className="grid grid-cols-2 gap-2 sm:flex">
             <Link
               className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-              href="/explore?tab=liked"
+              href="/explore"
             >
-              <Heart size={16} />
-              Liked
+              <Sparkles size={16} />
+              Connections
             </Link>
             <Link
               className="flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-3 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
@@ -235,7 +235,7 @@ export default function MessagesInbox() {
                           : "No messages yet."}
                       </p>
                       <p className="mt-2 text-xs font-semibold uppercase text-[#607265]">
-                        {formatDate(conversation.updatedAt)}
+                        {formatConversationListDate(conversation.updatedAt)}
                       </p>
                     </div>
                   </div>
@@ -307,9 +307,9 @@ function InboxEmptyState() {
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         <Link
           className="inline-flex h-10 items-center justify-center rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32]"
-          href="/explore?tab=liked"
+          href="/explore"
         >
-          Open liked profiles
+          Open Connections
         </Link>
         <Link
           className="inline-flex h-10 items-center justify-center rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
@@ -322,17 +322,48 @@ function InboxEmptyState() {
   );
 }
 
-function formatDate(value: string) {
+function formatConversationListDate(value: string) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "Recently";
   }
 
-  return new Intl.DateTimeFormat("en", {
+  const now = new Date();
+
+  if (isSameDay(date, now)) {
+    return "Today";
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  if (isSameDay(date, yesterday)) {
+    return "Yesterday";
+  }
+
+  const ageMs = now.getTime() - date.getTime();
+  const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+  if (ageDays < 7) {
+    return new Intl.DateTimeFormat("en", { weekday: "long" }).format(date);
+  }
+
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "short" }).format(
+    date,
+  );
+  const dayMonth = new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
     month: "short",
   }).format(date);
+
+  return `${weekday}, ${dayMonth}`;
+}
+
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }

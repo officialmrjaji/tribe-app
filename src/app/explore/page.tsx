@@ -1,12 +1,10 @@
 import {
   ArrowLeft,
   Crown,
-  Heart,
   History,
   Lock,
   MessageCircle,
   Sparkles,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -17,8 +15,6 @@ import { getCurrentOwnedProfile } from "@/lib/auth/owned-profile";
 import {
   getInboundLikedDiscoveryProfiles,
   getInboundLikedProfileCount,
-  getLikedDiscoveryProfiles,
-  getMutualLikedDiscoveryProfiles,
   getPassedDiscoveryProfiles,
   type DiscoveryCollectionProfile,
 } from "@/lib/discovery/service";
@@ -26,13 +22,6 @@ import { getFeatureFlag } from "@/lib/feature-flags";
 import { getPremiumStatus } from "@/lib/premium/service";
 
 const tabs = [
-  {
-    body: "Profiles you liked from discovery.",
-    href: "/explore?tab=liked",
-    icon: Heart,
-    key: "liked",
-    label: "People I liked",
-  },
   {
     body: "Profiles hidden from your active queue.",
     href: "/explore?tab=passed",
@@ -46,13 +35,6 @@ const tabs = [
     icon: Crown,
     key: "liked-me",
     label: "Who liked me",
-  },
-  {
-    body: "Mutual likes that can open messaging.",
-    href: "/explore?tab=matches",
-    icon: Users,
-    key: "matches",
-    label: "Matches",
   },
 ] as const;
 
@@ -71,21 +53,14 @@ export default async function ExplorePage({
 
   const params = await searchParams;
   const activeTab = parseTab(params.tab);
-  const [likedProfiles, passedProfiles, matches, premiumStatus] =
-    await Promise.all([
-      getLikedDiscoveryProfiles(session.ownedProfile),
-      getPassedDiscoveryProfiles(session.ownedProfile),
-      getMutualLikedDiscoveryProfiles(session.ownedProfile),
-      getPremiumStatus(session.ownedProfile),
-    ]);
+  const [passedProfiles, premiumStatus] = await Promise.all([
+    getPassedDiscoveryProfiles(session.ownedProfile),
+    getPremiumStatus(session.ownedProfile),
+  ]);
   const premiumFeature = getFeatureFlag("premium");
   const premiumAvailable = premiumFeature.enabled;
 
-  if (
-    !likedProfiles.completed ||
-    !passedProfiles.completed ||
-    !matches.completed
-  ) {
+  if (!passedProfiles.completed) {
     redirect("/onboarding");
   }
 
@@ -105,8 +80,6 @@ export default async function ExplorePage({
   const activeProfiles = getActiveProfiles({
     activeTab,
     inboundProfiles: inboundProfiles?.profiles ?? [],
-    likedProfiles: likedProfiles.profiles,
-    matches: matches.profiles,
     passedProfiles: passedProfiles.profiles,
   });
 
@@ -128,11 +101,11 @@ export default async function ExplorePage({
               Connections
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
-              Likes, passes, and matches
+              Connections
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
-              Review people you liked, restore passed profiles, see mutual
-              likes, and use Premium to reveal who liked you.
+              Restore passed profiles or preview inbound interest. Mutual
+              likes move into Chats automatically.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -159,13 +132,11 @@ export default async function ExplorePage({
           </div>
         </header>
 
-        <section className="mt-6 grid gap-3 md:grid-cols-4">
+        <section className="mt-6 grid gap-3 md:grid-cols-2">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const count = getTabCount({
               inboundCount,
-              likedProfiles: likedProfiles.profiles,
-              matches: matches.profiles,
               passedProfiles: passedProfiles.profiles,
               tab: tab.key,
             });
@@ -208,7 +179,7 @@ export default async function ExplorePage({
         ) : (
           <ProfileCollectionGrid
             accentLabel={getAccentLabel(activeTab)}
-            allowMessaging={activeTab === "liked" || activeTab === "matches"}
+            allowMessaging={false}
             profiles={activeProfiles}
             restorePassed={activeTab === "passed"}
           />
@@ -219,20 +190,16 @@ export default async function ExplorePage({
 }
 
 function parseTab(tab?: string): ExploreTab {
-  return tabs.some((item) => item.key === tab) ? (tab as ExploreTab) : "liked";
+  return tabs.some((item) => item.key === tab) ? (tab as ExploreTab) : "passed";
 }
 
 function getActiveProfiles({
   activeTab,
   inboundProfiles,
-  likedProfiles,
-  matches,
   passedProfiles,
 }: {
   activeTab: ExploreTab;
   inboundProfiles: DiscoveryCollectionProfile[];
-  likedProfiles: DiscoveryCollectionProfile[];
-  matches: DiscoveryCollectionProfile[];
   passedProfiles: DiscoveryCollectionProfile[];
 }) {
   if (activeTab === "passed") {
@@ -243,23 +210,15 @@ function getActiveProfiles({
     return inboundProfiles;
   }
 
-  if (activeTab === "matches") {
-    return matches;
-  }
-
-  return likedProfiles;
+  return [];
 }
 
 function getTabCount({
   inboundCount,
-  likedProfiles,
-  matches,
   passedProfiles,
   tab,
 }: {
   inboundCount: number;
-  likedProfiles: DiscoveryCollectionProfile[];
-  matches: DiscoveryCollectionProfile[];
   passedProfiles: DiscoveryCollectionProfile[];
   tab: ExploreTab;
 }) {
@@ -271,11 +230,7 @@ function getTabCount({
     return inboundCount;
   }
 
-  if (tab === "matches") {
-    return matches.length;
-  }
-
-  return likedProfiles.length;
+  return 0;
 }
 
 function getAccentLabel(tab: ExploreTab) {
@@ -287,19 +242,11 @@ function getAccentLabel(tab: ExploreTab) {
     return "Liked you";
   }
 
-  if (tab === "matches") {
-    return "Matched";
-  }
-
-  return "Liked";
+  return "Liked you";
 }
 
 function ExploreEmptyState({ activeTab }: { activeTab: ExploreTab }) {
   const copy = {
-    liked: {
-      body: "Like profiles that feel aligned. They will appear here so you can revisit them.",
-      title: "No liked profiles yet.",
-    },
     passed: {
       body: "Passed profiles stay out of active discovery until you restore them.",
       title: "No passed profiles yet.",
@@ -307,10 +254,6 @@ function ExploreEmptyState({ activeTab }: { activeTab: ExploreTab }) {
     "liked-me": {
       body: "When other members like your profile, Premium members can review them here.",
       title: "No one has liked your profile yet.",
-    },
-    matches: {
-      body: "Matches appear after both people like each other. Messaging stays permission-based.",
-      title: "No mutual likes yet.",
     },
   }[activeTab];
 
@@ -365,9 +308,9 @@ function LockedWhoLikedMe({
         </Link>
         <Link
           className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#cbd4c6] bg-white px-4 text-sm font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-          href="/explore?tab=matches"
+          href="/messages"
         >
-          View matches
+          Open Chats
         </Link>
       </div>
     </section>

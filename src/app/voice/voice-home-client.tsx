@@ -9,11 +9,15 @@ import {
   Mic,
   Plus,
   Radio,
+  ShieldCheck,
+  UserRound,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type { VoiceRoomSummary } from "@/lib/voice/service";
 
 type VoiceHomeClientProps = {
@@ -46,6 +50,9 @@ const roomTypeOptions = [
 export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) {
   const router = useRouter();
   const [rooms, setRooms] = useState(initialRooms);
+  const [roomsStatus, setRoomsStatus] = useState<"ready" | "refreshing">(
+    "ready",
+  );
   const [pendingAction, setPendingAction] = useState<
     "create" | "join" | "match" | "mic" | null
   >(null);
@@ -60,6 +67,36 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
     scheduledAt: "",
     title: "",
     topic: "",
+  });
+
+  const refreshRooms = useCallback(async () => {
+    setRoomsStatus("refreshing");
+
+    try {
+      const response = await fetch("/api/voice/rooms", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { rooms?: VoiceRoomSummary[] }
+        | null;
+
+      if (response.ok && payload?.rooms) {
+        setRooms(dedupeRooms(payload.rooms));
+      }
+    } catch {
+      // Keep the current list. Realtime and fallback polling will retry.
+    } finally {
+      setRoomsStatus("ready");
+    }
+  }, []);
+
+  useRealtimeInvalidation({
+    events: ["voice"],
+    fallbackIntervalMs: 30_000,
+    onInvalidate: () => {
+      void refreshRooms();
+    },
   });
 
   async function startVoiceMatch() {
@@ -206,14 +243,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
               <Mic size={16} />
               Voice Rooms
             </p>
-            <h1 className="mt-1 text-2xl font-semibold">
-              Meet by voice first, reveal profiles after.
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
-              Random voice matches start with 2 minutes and can extend only if
-              both people choose to continue. Rooms can be public, private, or
-              scheduled. Video is not used.
-            </p>
+            <h1 className="mt-1 text-2xl font-semibold">Voice Rooms</h1>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <button
@@ -292,40 +322,22 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
                   ))}
                 </select>
               </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#34443a]">
-                    Topic
-                  </span>
-                  <input
-                    className="mt-2 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
-                    maxLength={120}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        topic: event.target.value,
-                      }))
-                    }
-                    value={form.topic}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-[#34443a]">
-                    Language
-                  </span>
-                  <input
-                    className="mt-2 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
-                    maxLength={80}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        language: event.target.value,
-                      }))
-                    }
-                    value={form.language}
-                  />
-                </label>
-              </div>
+              <label className="block">
+                <span className="text-sm font-semibold text-[#34443a]">
+                  Topic
+                </span>
+                <input
+                  className="mt-2 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
+                  maxLength={120}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      topic: event.target.value,
+                    }))
+                  }
+                  value={form.topic}
+                />
+              </label>
               {form.roomType === "scheduled" ? (
                 <label className="block">
                   <span className="text-sm font-semibold text-[#34443a]">
@@ -377,6 +389,18 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
           </aside>
 
           <section className="grid content-start gap-4 md:grid-cols-2">
+            <div className="flex items-center justify-between md:col-span-2">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                <Radio size={16} />
+                Live public rooms
+              </p>
+              {roomsStatus === "refreshing" ? (
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#607265]">
+                  <LoaderCircle className="animate-spin" size={13} />
+                  Updating
+                </span>
+              ) : null}
+            </div>
             {rooms.length === 0 ? (
               <div className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm md:col-span-2">
                 <p className="text-sm font-semibold text-[#607265]">
@@ -390,7 +414,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
             ) : null}
             {rooms.map((room) => (
               <article
-                className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm"
+                className="rounded-lg border border-[#d8ded1] bg-white p-4 shadow-sm transition hover:border-[#9dad9f]"
                 key={room.id}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -403,22 +427,41 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
                       ) : (
                         <Users size={15} />
                       )}
-                      {toTitle(room.roomType)} room
+                      {room.status === "open" ? "Live" : toTitle(room.status)}
+                      {" / "}
+                      {toTitle(room.roomType)}
                     </p>
                     <h2 className="mt-1 text-lg font-semibold">{room.title}</h2>
+                    <p className="mt-1 text-sm text-[#607265]">
+                      Hosted by {room.host?.name ?? "Tribe member"}
+                    </p>
                   </div>
-                  <span className="rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-bold text-[#34443a]">
-                    {room.participantCount}/{room.maxParticipants}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="rounded-md bg-[#edf2e9] px-2 py-1 text-xs font-bold text-[#34443a]">
+                      {room.participantCount}/{room.maxParticipants}
+                    </span>
+                    {room.isLocked ? <Tag value="Locked" /> : null}
+                    {room.participantCount >= room.maxParticipants ? (
+                      <Tag value="Full" />
+                    ) : null}
+                  </div>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-[#34443a]">
                   {room.description ?? "A calm voice room for a focused chat."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {room.topic ? <Tag value={room.topic} /> : null}
-                  {room.language ? <Tag value={room.language} /> : null}
                   {room.scheduledAt ? (
                     <Tag value={formatDate(room.scheduledAt)} />
+                  ) : null}
+                </div>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <ParticipantPreview room={room} />
+                  {room.isHost ? (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[#e4f4ec] px-2 py-1 text-xs font-semibold text-[#176b57]">
+                      <ShieldCheck size={13} />
+                      Host
+                    </span>
                   ) : null}
                 </div>
                 {room.roomType === "private" && !room.isMember ? (
@@ -462,6 +505,67 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
       </div>
     </main>
   );
+}
+
+function ParticipantPreview({ room }: { room: VoiceRoomSummary }) {
+  const previewParticipants = room.participants.slice(0, 4);
+
+  if (previewParticipants.length === 0) {
+    return (
+      <span className="text-xs font-semibold text-[#607265]">
+        Waiting for people
+      </span>
+    );
+  }
+
+  return (
+    <div
+      aria-label={`${room.participantCount} participant${
+        room.participantCount === 1 ? "" : "s"
+      } in ${room.title}`}
+      className="flex items-center"
+    >
+      {previewParticipants.map((participant, index) =>
+        participant.avatarUrl ? (
+          <SafeStorageImage
+            alt={`${participant.name} avatar`}
+            className="h-8 w-8 rounded-full border-2 border-white object-cover"
+            height={32}
+            key={participant.userId}
+            src={participant.avatarUrl}
+            style={{ marginLeft: index === 0 ? 0 : -8 }}
+            width={32}
+          />
+        ) : (
+          <span
+            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#176b57] text-white"
+            key={participant.userId}
+            style={{ marginLeft: index === 0 ? 0 : -8 }}
+          >
+            <UserRound size={14} />
+          </span>
+        ),
+      )}
+      {room.participantCount > previewParticipants.length ? (
+        <span className="-ml-2 flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-white bg-[#edf2e9] px-1 text-xs font-bold text-[#34443a]">
+          +{room.participantCount - previewParticipants.length}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function dedupeRooms(rooms: VoiceRoomSummary[]) {
+  const seen = new Set<string>();
+
+  return rooms.filter((room) => {
+    if (seen.has(room.id)) {
+      return false;
+    }
+
+    seen.add(room.id);
+    return true;
+  });
 }
 
 function Notice({
