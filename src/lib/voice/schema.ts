@@ -47,6 +47,24 @@ export const voiceRoomActionSchema = z.object({
   targetUserId: z.string().uuid().optional(),
 });
 
+export const voiceRoomChatInputSchema = z.object({
+  body: z.string().trim().min(1).max(500),
+  clientMessageId: z.string().trim().max(80).optional(),
+});
+
+export const voiceRoomChatReportSchema = z.object({
+  details: z.string().trim().max(1000).optional(),
+  reason: z
+    .string()
+    .trim()
+    .min(2, "Choose a report reason.")
+    .max(240, "Report reason must be 240 characters or fewer."),
+});
+
 export type CreateVoiceRoomInput = z.infer<typeof createVoiceRoomSchema>;
 export type JoinVoiceRoomInput = z.infer<typeof joinVoiceRoomSchema>;
 export type VoiceRoomActionInput = z.infer<typeof voiceRoomActionSchema>;
+export type VoiceRoomChatInput = z.infer<typeof voiceRoomChatInputSchema>;
+export type VoiceRoomChatReportInput = z.infer<
+  typeof voiceRoomChatReportSchema
+>;

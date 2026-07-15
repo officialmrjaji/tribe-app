@@ -7,7 +7,8 @@ export type RealtimeInvalidationEvent =
   | "messages"
   | "notifications"
   | "square"
-  | "voice";
+  | "voice"
+  | "voice_chat";
 
 const realtimeEvents: RealtimeInvalidationEvent[] = [
   "connections",
@@ -15,6 +16,7 @@ const realtimeEvents: RealtimeInvalidationEvent[] = [
   "notifications",
   "square",
   "voice",
+  "voice_chat",
 ];
 const listeners = new Map<
   RealtimeInvalidationEvent,

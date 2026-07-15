@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { useActiveVoiceRoom } from "@/components/voice/active-voice-room-provider";
 import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type { VoiceRoomSummary } from "@/lib/voice/service";
 
@@ -49,6 +50,7 @@ const roomTypeOptions = [
 
 export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) {
   const router = useRouter();
+  const { activeRoom, registerActiveRoom } = useActiveVoiceRoom();
   const [rooms, setRooms] = useState(initialRooms);
   const [roomsStatus, setRoomsStatus] = useState<"ready" | "refreshing">(
     "ready",
@@ -152,6 +154,11 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function createRoom() {
+    if (activeRoom) {
+      setError("Leave your current voice room before creating another one.");
+      return;
+    }
+
     setPendingAction("create");
     setError("");
     setMessage("");
@@ -183,6 +190,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
       }
 
       setRooms((currentRooms) => [payload.room as VoiceRoomSummary, ...currentRooms]);
+      registerActiveRoom(payload.room as VoiceRoomSummary);
       setMessage(`${payload.room.title} is ready.`);
       router.push(`/voice/rooms/${payload.room.id}`);
     } catch (roomError) {
@@ -197,6 +205,11 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function joinRoom(room: VoiceRoomSummary) {
+    if (activeRoom && activeRoom.id !== room.id) {
+      setError("Leave your current voice room before joining another one.");
+      return;
+    }
+
     setPendingAction("join");
     setError("");
     setMessage("");
@@ -217,6 +230,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
         throw new Error(getFailureMessage(payload, "Unable to join room."));
       }
 
+      registerActiveRoom(payload.room);
       router.push(`/voice/rooms/${room.id}`);
     } catch (joinError) {
       setError(

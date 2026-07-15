@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  ChevronDown,
   DoorOpen,
   Hand,
   Headphones,
@@ -24,11 +25,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { useActiveVoiceRoom } from "@/components/voice/active-voice-room-provider";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type {
+  VoiceRoomChatMessage,
   VoiceRoomParticipantSummary,
   VoiceRoomSummary,
 } from "@/lib/voice/service";
@@ -36,6 +40,17 @@ import type {
 type VoiceRoomPayload = {
   error?: string;
   room?: VoiceRoomSummary;
+};
+
+type VoiceRoomChatPayload = {
+  error?: string;
+  message?: VoiceRoomChatMessage;
+  messages?: VoiceRoomChatMessage[];
+  pagination?: {
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
 };
 
 type RoomAction =
@@ -59,16 +74,36 @@ export default function VoiceRoomClient({
 }: {
   initialRoom: VoiceRoomSummary;
 }) {
+  const router = useRouter();
+  const activeRoomState = useActiveVoiceRoom();
+  const {
+    activeRoom,
+    chatUnreadCount,
+    clearActiveRoom,
+    clearChatUnread,
+    isMinimized,
+    minimizeRoom,
+    registerActiveRoom,
+    setActiveRoom,
+    toggleMute: toggleActiveRoomMute,
+  } = activeRoomState;
   const [room, setRoom] = useState(initialRoom);
   const [inviteCode, setInviteCode] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [isMuted, setIsMuted] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [showRoomInfo, setShowRoomInfo] = useState(false);
   const [selectedParticipant, setSelectedParticipant] =
     useState<VoiceRoomParticipantSummary | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<VoiceRoomChatMessage[]>([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatPendingId, setChatPendingId] = useState("");
+  const [chatReportPendingId, setChatReportPendingId] = useState("");
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const viewerParticipant =
     room.participants.find(
@@ -77,6 +112,19 @@ export default function VoiceRoomClient({
   const currentUserRaisedHand = Boolean(viewerParticipant?.handRaisedAt);
   const canModerate = room.isHost || room.viewerRole === "moderator";
   const isRoomEnded = room.status === "closed" || room.status === "cancelled";
+  const isMuted = activeRoomState.isMuted;
+
+  useEffect(() => {
+    if (room.isMember && !isRoomEnded) {
+      registerActiveRoom(room, {
+        minimized: isMinimized,
+      });
+    }
+
+    if (isRoomEnded || !room.isMember) {
+      clearActiveRoom();
+    }
+  }, [clearActiveRoom, isMinimized, isRoomEnded, registerActiveRoom, room]);
 
   const refreshRoom = useCallback(async () => {
     try {
@@ -90,11 +138,21 @@ export default function VoiceRoomClient({
 
       if (response.ok && payload?.room) {
         setRoom(payload.room);
+
+        if (
+          payload.room.isMember &&
+          payload.room.status !== "closed" &&
+          payload.room.status !== "cancelled"
+        ) {
+          setActiveRoom(payload.room);
+        } else {
+          clearActiveRoom();
+        }
       }
     } catch {
       // Keep the current room snapshot. Realtime and fallback polling will retry.
     }
-  }, [room.id]);
+  }, [clearActiveRoom, room.id, setActiveRoom]);
 
   useRealtimeInvalidation({
     events: ["voice"],
@@ -126,7 +184,7 @@ export default function VoiceRoomClient({
 
   async function toggleMute() {
     if (!isMuted) {
-      setIsMuted(true);
+      toggleActiveRoomMute();
       setMessage("Muted.");
       return;
     }
@@ -142,7 +200,7 @@ export default function VoiceRoomClient({
       });
 
       stream.getTracks().forEach((track) => track.stop());
-      setIsMuted(false);
+      toggleActiveRoomMute();
       setMessage("Microphone is available.");
     } catch {
       setError("Microphone permission is needed before unmuting.");
@@ -151,7 +209,179 @@ export default function VoiceRoomClient({
     }
   }
 
+  const loadRoomChat = useCallback(async () => {
+    if (!room.isMember || isRoomEnded) {
+      return;
+    }
+
+    setChatLoading(true);
+    setChatError("");
+
+    try {
+      const response = await fetch(`/api/voice/rooms/${room.id}/chat`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceRoomChatPayload
+        | null;
+
+      if (!response.ok || !payload?.messages) {
+        throw new Error(payload?.error ?? "Room chat could not load.");
+      }
+
+      setChatMessages(payload.messages);
+
+      if (chatOpen) {
+        clearChatUnread();
+      }
+    } catch (chatLoadError) {
+      setChatError(
+        chatLoadError instanceof Error
+          ? chatLoadError.message
+          : "Room chat could not load.",
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  }, [chatOpen, clearChatUnread, isRoomEnded, room.id, room.isMember]);
+
+  useEffect(() => {
+    if (chatOpen) {
+      const timer = window.setTimeout(() => {
+        void loadRoomChat();
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [chatOpen, loadRoomChat]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ block: "end" });
+  }, [chatMessages.length, chatOpen]);
+
+  useRealtimeInvalidation({
+    events: ["voice_chat"],
+    fallbackIntervalMs: 60_000,
+    onInvalidate: (event) => {
+      if (event === "voice_chat" && chatOpen) {
+        void loadRoomChat();
+      }
+    },
+  });
+
+  async function sendRoomChatMessage() {
+    const body = chatDraft.trim();
+
+    if (!body || chatPendingId) {
+      return;
+    }
+
+    const clientMessageId = crypto.randomUUID();
+    const optimisticMessage: VoiceRoomChatMessage = {
+      body,
+      createdAt: new Date().toISOString(),
+      id: clientMessageId,
+      isMine: true,
+      sender: viewerParticipant ?? {
+        avatarUrl: null,
+        city: "",
+        name: "You",
+        profileId: "",
+        userId: room.viewerUserId,
+        voiceIntroDurationSeconds: null,
+        voiceIntroUrl: null,
+      },
+      status: "sending",
+    };
+
+    setChatPendingId(clientMessageId);
+    setChatError("");
+    setChatDraft("");
+    setChatMessages((current) => [...current, optimisticMessage]);
+
+    try {
+      const response = await fetch(`/api/voice/rooms/${room.id}/chat`, {
+        body: JSON.stringify({ body, clientMessageId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | VoiceRoomChatPayload
+        | null;
+
+      if (!response.ok || !payload?.message) {
+        throw new Error(payload?.error ?? "Message could not be sent.");
+      }
+
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === clientMessageId ? payload.message! : message,
+        ),
+      );
+    } catch (sendError) {
+      setChatMessages((current) =>
+        current.filter((message) => message.id !== clientMessageId),
+      );
+      setChatDraft(body);
+      setChatError(
+        sendError instanceof Error ? sendError.message : "Message could not be sent.",
+      );
+    } finally {
+      setChatPendingId("");
+    }
+  }
+
+  async function reportRoomChatMessage(messageId: string) {
+    const reason = window.prompt(
+      "Tell us briefly why this room message should be reviewed.",
+      "Voice room safety concern",
+    );
+
+    if (!reason?.trim() || chatReportPendingId) {
+      return;
+    }
+
+    setChatReportPendingId(messageId);
+    setChatError("");
+
+    try {
+      const response = await fetch(
+        `/api/voice/rooms/${room.id}/chat/${messageId}/report`,
+        {
+          body: JSON.stringify({ reason }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          getFailureMessage(payload, "Room message could not be reported."),
+        );
+      }
+
+      setMessage("Room message reported for review.");
+    } catch (reportError) {
+      setChatError(
+        reportError instanceof Error
+          ? reportError.message
+          : "Room message could not be reported.",
+      );
+    } finally {
+      setChatReportPendingId("");
+    }
+  }
+
   async function joinRoom() {
+    if (activeRoom && activeRoom.id !== room.id) {
+      setError("Leave your current voice room before joining another one.");
+      return;
+    }
+
     setPendingAction("join");
     setError("");
     setMessage("");
@@ -173,6 +403,7 @@ export default function VoiceRoomClient({
       }
 
       setRoom(payload.room);
+      setActiveRoom(payload.room);
       setMessage("You joined the voice room.");
     } catch (joinError) {
       setError(
@@ -227,7 +458,10 @@ export default function VoiceRoomClient({
       setRoom(payload.room);
 
       if (action === "leave_room" || action === "end_room") {
+        clearActiveRoom();
         setMessage(action === "end_room" ? "Room ended." : "You left the room.");
+      } else {
+        setActiveRoom(payload.room);
       }
     } catch (actionError) {
       setError(
@@ -325,7 +559,7 @@ export default function VoiceRoomClient({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7f1] px-4 pb-28 pt-6 text-[#17201b] sm:px-6 lg:px-10">
+    <main className="min-h-screen bg-[#f6f7f1] px-4 pb-64 pt-6 text-[#17201b] sm:px-6 lg:px-10 lg:pb-36">
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -358,6 +592,19 @@ export default function VoiceRoomClient({
             {room.isHost ? <Tag value="Host" /> : null}
             {room.viewerRole === "moderator" ? <Tag value="Moderator" /> : null}
             {room.isMember ? <Tag value="Joined" /> : null}
+            {room.isMember && !isRoomEnded ? (
+              <button
+                className="flex h-8 items-center justify-center gap-1 rounded-md border border-[#cbd4c6] bg-white px-2 text-xs font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                onClick={() => {
+                  minimizeRoom();
+                  router.push("/");
+                }}
+                type="button"
+              >
+                <ChevronDown size={14} />
+                Minimize
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -489,7 +736,29 @@ export default function VoiceRoomClient({
         />
       ) : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#d8ded1] bg-white/95 px-3 py-3 shadow-[0_-10px_30px_rgba(23,32,27,0.08)] backdrop-blur">
+      {chatOpen ? (
+        <RoomChatDrawer
+          chatDraft={chatDraft}
+          chatEndRef={chatEndRef}
+          error={chatError}
+          isEnded={isRoomEnded}
+          isMember={room.isMember}
+          loading={chatLoading}
+          messages={chatMessages}
+          onChangeDraft={setChatDraft}
+          onClose={() => {
+            setChatOpen(false);
+            clearChatUnread();
+          }}
+          onReportMessage={reportRoomChatMessage}
+          onSend={sendRoomChatMessage}
+          pending={Boolean(chatPendingId)}
+          reportPendingId={chatReportPendingId}
+          roomTitle={room.title}
+        />
+      ) : null}
+
+      <div className="fixed inset-x-0 bottom-[76px] z-40 border-t border-[#d8ded1] bg-white/95 px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(23,32,27,0.08)] backdrop-blur lg:bottom-0">
         <div className="mx-auto grid max-w-4xl grid-cols-3 gap-2 sm:grid-cols-6">
           <ControlButton
             active={!isMuted}
@@ -508,10 +777,15 @@ export default function VoiceRoomClient({
             }
           />
           <ControlButton
-            disabled
+            active={chatOpen}
+            badgeCount={chatUnreadCount}
+            disabled={!room.isMember || isRoomEnded}
             icon={MessageCircle}
             label="Room Chat"
-            title="Room chat is deferred for a later release."
+            onClick={() => {
+              setChatOpen(true);
+              clearChatUnread();
+            }}
           />
           <ControlButton
             active={currentUserRaisedHand}
@@ -810,8 +1084,178 @@ function ProfileDrawer({
   );
 }
 
+function RoomChatDrawer({
+  chatDraft,
+  chatEndRef,
+  error,
+  isEnded,
+  isMember,
+  loading,
+  messages,
+  onChangeDraft,
+  onClose,
+  onReportMessage,
+  onSend,
+  pending,
+  reportPendingId,
+  roomTitle,
+}: {
+  chatDraft: string;
+  chatEndRef: { current: HTMLDivElement | null };
+  error: string;
+  isEnded: boolean;
+  isMember: boolean;
+  loading: boolean;
+  messages: VoiceRoomChatMessage[];
+  onChangeDraft: (value: string) => void;
+  onClose: () => void;
+  onReportMessage: (messageId: string) => void;
+  onSend: () => void;
+  pending: boolean;
+  reportPendingId: string;
+  roomTitle: string;
+}) {
+  const canSend = isMember && !isEnded;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end bg-[#17201b]/30 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-10 backdrop-blur-sm sm:items-center sm:justify-center">
+      <section className="flex max-h-[84vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-[#d8ded1] bg-white shadow-xl sm:rounded-lg">
+        <header className="flex items-start justify-between gap-3 border-b border-[#d8ded1] px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase text-[#607265]">
+              Room Chat
+            </p>
+            <h2 className="mt-1 text-base font-semibold text-[#17201b]">
+              {roomTitle}
+            </h2>
+          </div>
+          <button
+            aria-label="Close room chat"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-[#607265] transition hover:bg-[#eef7f1]"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#fbfaf4] px-4 py-3">
+          {loading && messages.length === 0 ? (
+            <p className="rounded-md border border-[#d8ded1] bg-white px-3 py-2 text-sm text-[#607265]">
+              Loading room chat...
+            </p>
+          ) : null}
+
+          {!loading && messages.length === 0 ? (
+            <p className="rounded-md border border-[#d8ded1] bg-white px-3 py-2 text-sm text-[#607265]">
+              No room messages yet. Keep it brief and kind.
+            </p>
+          ) : null}
+
+          {messages.map((message) => (
+            <article
+              className={cx(
+                "flex items-start gap-2",
+                message.isMine && "flex-row-reverse",
+              )}
+              key={message.id}
+            >
+              {message.sender.avatarUrl ? (
+                <SafeStorageImage
+                  alt={`${message.sender.name} avatar`}
+                  className="h-8 w-8 rounded-full object-cover"
+                  height={32}
+                  src={message.sender.avatarUrl}
+                  width={32}
+                />
+              ) : (
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#176b57] text-white">
+                  <UserRound size={14} />
+                </span>
+              )}
+              <div
+                className={cx(
+                  "max-w-[78%] rounded-lg px-3 py-2 text-sm shadow-sm",
+                  message.isMine
+                    ? "bg-[#176b57] text-white"
+                    : "border border-[#d8ded1] bg-white text-[#17201b]",
+                  message.status === "sending" && "opacity-70",
+                )}
+              >
+                <p className="text-xs font-semibold opacity-75">
+                  {message.isMine ? "You" : message.sender.name} /{" "}
+                  {formatCompactTime(message.createdAt)}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap leading-5">
+                  {message.body}
+                </p>
+                {!message.isMine && message.status !== "sending" ? (
+                  <button
+                    className="mt-2 text-xs font-semibold opacity-70 transition hover:opacity-100 disabled:opacity-40"
+                    disabled={reportPendingId === message.id}
+                    onClick={() => onReportMessage(message.id)}
+                    type="button"
+                  >
+                    {reportPendingId === message.id ? "Reporting..." : "Report"}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+
+        {error ? (
+          <p className="border-t border-[#f1c4b8] bg-[#fff5f1] px-4 py-2 text-sm font-semibold text-[#8a3325]">
+            {error}
+          </p>
+        ) : null}
+
+        <form
+          className="border-t border-[#d8ded1] bg-white p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSend();
+          }}
+        >
+          {!canSend ? (
+            <p className="rounded-md border border-[#d8ded1] bg-[#fbfaf4] px-3 py-2 text-sm text-[#607265]">
+              Room chat is available only while you are in a live room.
+            </p>
+          ) : (
+            <div className="flex gap-2">
+              <label className="sr-only" htmlFor="voice-room-chat-message">
+                Message room chat
+              </label>
+              <textarea
+                className="min-h-11 flex-1 resize-none rounded-md border border-[#c9ddd3] px-3 py-2 text-sm outline-none transition focus:border-[#176b57] focus:ring-2 focus:ring-[#176b57]/15"
+                id="voice-room-chat-message"
+                maxLength={500}
+                onChange={(event) => onChangeDraft(event.target.value)}
+                placeholder="Message the room"
+                value={chatDraft}
+              />
+              <button
+                className="flex h-11 min-w-20 items-center justify-center gap-2 rounded-md bg-[#176b57] px-3 text-sm font-semibold text-white transition hover:bg-[#125744] disabled:opacity-60"
+                disabled={pending || !chatDraft.trim()}
+                type="submit"
+              >
+                {pending ? (
+                  <LoaderCircle className="animate-spin" size={16} />
+                ) : null}
+                Send
+              </button>
+            </div>
+          )}
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function ControlButton({
   active = false,
+  badgeCount = 0,
   danger = false,
   disabled = false,
   icon: Icon,
@@ -821,6 +1265,7 @@ function ControlButton({
   title,
 }: {
   active?: boolean;
+  badgeCount?: number;
   danger?: boolean;
   disabled?: boolean;
   icon: LucideIcon;
@@ -845,7 +1290,18 @@ function ControlButton({
       title={title ?? label}
       type="button"
     >
-      {loading ? <LoaderCircle className="animate-spin" size={18} /> : <Icon size={18} />}
+      <span className="relative">
+        {loading ? (
+          <LoaderCircle className="animate-spin" size={18} />
+        ) : (
+          <Icon size={18} />
+        )}
+        {badgeCount > 0 ? (
+          <span className="absolute -right-2 -top-2 rounded-full bg-[#f6c66f] px-1 text-[10px] leading-4 text-[#17201b]">
+            {badgeCount > 9 ? "9+" : badgeCount}
+          </span>
+        ) : null}
+      </span>
       <span>{label}</span>
     </button>
   );
@@ -973,6 +1429,19 @@ function formatDate(value: string) {
     hour: "numeric",
     minute: "2-digit",
     month: "short",
+  }).format(date);
+}
+
+function formatCompactTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "now";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
   }).format(date);
 }
 

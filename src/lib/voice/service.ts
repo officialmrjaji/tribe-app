@@ -10,7 +10,12 @@ import {
 } from "@/lib/profile/service";
 import { recordModerationAudit } from "@/lib/security/audit";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import type { CreateVoiceRoomInput, VoiceRoomActionInput } from "./schema";
+import type {
+  CreateVoiceRoomInput,
+  VoiceRoomActionInput,
+  VoiceRoomChatInput,
+  VoiceRoomChatReportInput,
+} from "./schema";
 
 const randomVoiceSessionMs = 2 * 60 * 1000;
 const maxVoiceExtensionMs = 5 * 60 * 1000;
@@ -73,6 +78,18 @@ type VoiceRoomParticipantRow = {
   room_id: string;
   speaking_since?: string | null;
   user_id: string;
+};
+
+type VoiceRoomMessageRow = {
+  body: string;
+  created_at: string;
+  deleted_at: string | null;
+  id: string;
+  room_id: string;
+  sender_profile_id: string;
+  sender_user_id: string;
+  status: "moderated" | "removed" | "sent";
+  updated_at: string;
 };
 
 type VoiceRoomRole = "host" | "listener" | "moderator" | "speaker";
@@ -157,6 +174,27 @@ export type VoiceRoomSummary = {
   viewerRole: VoiceRoomRole | null;
   viewerUserId: string;
 };
+
+export type VoiceRoomChatMessage = {
+  body: string;
+  createdAt: string;
+  id: string;
+  isMine: boolean;
+  sender: VoiceProfileSummary;
+  status: string;
+};
+
+export type VoiceRoomChatResult = {
+  messages: VoiceRoomChatMessage[];
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+};
+
+const defaultVoiceRoomChatPageSize = 40;
+const maxVoiceRoomChatPageSize = 60;
 
 export async function startRandomVoiceMatch(ownedProfile: OwnedProfile) {
   await assertOwnedProfileHasMinimumPhotos(ownedProfile);
@@ -784,6 +822,156 @@ export async function applyVoiceRoomAction(
   return getVoiceRoom(ownedProfile, roomId);
 }
 
+export async function listVoiceRoomMessages(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+  {
+    before,
+    limit = defaultVoiceRoomChatPageSize,
+  }: {
+    before?: string | null;
+    limit?: number;
+  } = {},
+): Promise<VoiceRoomChatResult> {
+  await assertCanUseRoomChat(ownedProfile, roomId);
+
+  const pageSize = Math.min(
+    Math.max(1, limit || defaultVoiceRoomChatPageSize),
+    maxVoiceRoomChatPageSize,
+  );
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("voice_room_messages")
+    .select("*")
+    .eq("room_id", roomId)
+    .is("deleted_at", null)
+    .eq("status", "sent")
+    .order("created_at", { ascending: false })
+    .limit(pageSize + 1);
+
+  if (before) {
+    query = query.lt("created_at", before);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as VoiceRoomMessageRow[];
+  const hasMore = rows.length > pageSize;
+  const pageRows = rows.slice(0, pageSize).reverse();
+
+  return {
+    messages: await hydrateVoiceRoomMessages(ownedProfile, pageRows),
+    pagination: {
+      hasMore,
+      limit: pageSize,
+      nextCursor: hasMore ? rows[pageSize - 1]?.created_at ?? null : null,
+    },
+  };
+}
+
+export async function sendVoiceRoomMessage(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+  input: VoiceRoomChatInput,
+) {
+  await assertCanUseRoomChat(ownedProfile, roomId);
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_room_messages")
+    .insert({
+      body: input.body,
+      room_id: roomId,
+      sender_profile_id: ownedProfile.profile.id,
+      sender_user_id: ownedProfile.account.id,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  const messages = await hydrateVoiceRoomMessages(ownedProfile, [
+    data as VoiceRoomMessageRow,
+  ]);
+
+  return { message: messages[0] };
+}
+
+export async function reportVoiceRoomMessage(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+  messageId: string,
+  input: VoiceRoomChatReportInput,
+) {
+  await assertCanUseRoomChat(ownedProfile, roomId);
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("voice_room_messages")
+    .select("id, room_id, sender_user_id")
+    .eq("id", messageId)
+    .eq("room_id", roomId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const message = data as
+    | {
+        id: string;
+        room_id: string;
+        sender_user_id: string;
+      }
+    | null;
+
+  if (!message) {
+    throw new VoiceExperienceError("Room message not found.", 404);
+  }
+
+  if (message.sender_user_id === ownedProfile.account.id) {
+    throw new VoiceExperienceError("You cannot report your own message.", 400);
+  }
+
+  const { data: report, error: reportError } = await supabase
+    .from("voice_room_message_reports")
+    .insert({
+      details: input.details ?? null,
+      message_id: message.id,
+      reason: input.reason,
+      reported_user_id: message.sender_user_id,
+      reporter_user_id: ownedProfile.account.id,
+      room_id: message.room_id,
+    })
+    .select("id")
+    .single();
+
+  if (reportError) {
+    throw reportError;
+  }
+
+  await recordModerationAudit({
+    action: "voice_room_message_reported",
+    actorClerkUserId: ownedProfile.account.clerk_user_id,
+    actorUserId: ownedProfile.account.id,
+    metadata: {
+      messageId: message.id,
+      reportedUserId: message.sender_user_id,
+      roomId: message.room_id,
+    },
+    targetId: report.id,
+    targetType: "voice_room_message_report",
+  });
+
+  return { reportId: report.id };
+}
+
 async function getVoiceSessionForMember(
   ownedProfile: OwnedProfile,
   sessionId: string,
@@ -947,6 +1135,127 @@ async function canAccessRoom(ownedProfile: OwnedProfile, room: VoiceRoomRow) {
   }
 
   return Boolean(data);
+}
+
+async function assertCanUseRoomChat(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data: roomData, error: roomError } = await supabase
+    .from("voice_rooms")
+    .select("*")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (roomError) {
+    throw roomError;
+  }
+
+  const room = roomData as VoiceRoomRow | null;
+
+  if (!room || !(await canAccessRoom(ownedProfile, room))) {
+    throw new VoiceExperienceError("Voice room not found.", 404);
+  }
+
+  if (room.status !== "open") {
+    throw new VoiceExperienceError(
+      "Room chat is available only while the voice room is live.",
+      409,
+    );
+  }
+
+  const { data: participant, error: participantError } = await supabase
+    .from("voice_room_participants")
+    .select("removed_at")
+    .eq("room_id", roomId)
+    .eq("user_id", ownedProfile.account.id)
+    .is("left_at", null)
+    .maybeSingle();
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  if (!participant || (participant as { removed_at: string | null }).removed_at) {
+    throw new VoiceExperienceError("Join the room to use room chat.", 403);
+  }
+
+  await assertNoRoomBlockConflicts(ownedProfile, roomId);
+}
+
+async function assertNoRoomBlockConflicts(
+  ownedProfile: OwnedProfile,
+  roomId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data: participants, error: participantError } = await supabase
+    .from("voice_room_participants")
+    .select("user_id")
+    .eq("room_id", roomId)
+    .is("left_at", null);
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  const otherUserIds = ((participants ?? []) as Array<{ user_id: string }>)
+    .map((participant) => participant.user_id)
+    .filter((userId) => userId !== ownedProfile.account.id);
+
+  if (otherUserIds.length === 0) {
+    return;
+  }
+
+  const { data: blockRows, error: blockError } = await supabase
+    .from("blocked_users")
+    .select("blocker_user_id, blocked_user_id")
+    .or(
+      [
+        `and(blocker_user_id.eq.${ownedProfile.account.id},blocked_user_id.in.(${otherUserIds.join(",")}))`,
+        `and(blocked_user_id.eq.${ownedProfile.account.id},blocker_user_id.in.(${otherUserIds.join(",")}))`,
+      ].join(","),
+    );
+
+  if (blockError) {
+    throw blockError;
+  }
+
+  if ((blockRows ?? []).length > 0) {
+    throw new VoiceExperienceError(
+      "Room chat is unavailable while a blocked member is in this room.",
+      403,
+    );
+  }
+}
+
+async function hydrateVoiceRoomMessages(
+  ownedProfile: OwnedProfile,
+  rows: VoiceRoomMessageRow[],
+): Promise<VoiceRoomChatMessage[]> {
+  const profilesByUserId = await getProfilesByUserIds(
+    Array.from(new Set(rows.map((row) => row.sender_user_id))),
+  );
+  const messages: VoiceRoomChatMessage[] = [];
+
+  for (const row of rows) {
+    const sender = profilesByUserId.get(row.sender_user_id);
+
+    if (!sender) {
+      continue;
+    }
+
+    messages.push({
+      body: row.body,
+      createdAt: row.created_at,
+      id: row.id,
+      isMine: row.sender_user_id === ownedProfile.account.id,
+      sender,
+      status: row.status,
+    });
+  }
+
+  return messages;
 }
 
 async function updateParticipant({
