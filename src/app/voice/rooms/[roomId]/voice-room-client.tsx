@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
-  ChevronDown,
   DoorOpen,
   Hand,
   Headphones,
@@ -14,6 +13,7 @@ import {
   MessageCircle,
   Mic,
   MicOff,
+  Minimize2,
   MoreVertical,
   Radio,
   ShieldAlert,
@@ -75,18 +75,18 @@ export default function VoiceRoomClient({
   initialRoom: VoiceRoomSummary;
 }) {
   const router = useRouter();
-  const activeRoomState = useActiveVoiceRoom();
   const {
     activeRoom,
     chatUnreadCount,
     clearActiveRoom,
     clearChatUnread,
     isMinimized,
+    isMuted,
     minimizeRoom,
     registerActiveRoom,
     setActiveRoom,
     toggleMute: toggleActiveRoomMute,
-  } = activeRoomState;
+  } = useActiveVoiceRoom();
   const [room, setRoom] = useState(initialRoom);
   const [inviteCode, setInviteCode] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -112,7 +112,18 @@ export default function VoiceRoomClient({
   const currentUserRaisedHand = Boolean(viewerParticipant?.handRaisedAt);
   const canModerate = room.isHost || room.viewerRole === "moderator";
   const isRoomEnded = room.status === "closed" || room.status === "cancelled";
-  const isMuted = activeRoomState.isMuted;
+
+  useEffect(() => {
+    if (room.isMember && !isRoomEnded) {
+      registerActiveRoom(room, {
+        minimized: isMinimized,
+      });
+    }
+
+    if (isRoomEnded || !room.isMember) {
+      clearActiveRoom();
+    }
+  }, [clearActiveRoom, isMinimized, isRoomEnded, registerActiveRoom, room]);
 
   useEffect(() => {
     if (room.isMember && !isRoomEnded) {
@@ -475,6 +486,11 @@ export default function VoiceRoomClient({
     }
   }
 
+  function minimizeActiveRoom() {
+    minimizeRoom();
+    router.push("/voice");
+  }
+
   async function reportParticipant(participant: VoiceRoomParticipantSummary) {
     setPendingAction(`report:${participant.userId}`);
     setError("");
@@ -587,24 +603,21 @@ export default function VoiceRoomClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {room.isMember && !isRoomEnded ? (
+              <button
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-[#cbd4c6] bg-white px-2 text-xs font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                onClick={minimizeActiveRoom}
+                type="button"
+              >
+                <Minimize2 size={14} />
+                Minimize
+              </button>
+            ) : null}
             {room.isLocked ? <Tag value="Locked" /> : null}
             {room.topic ? <Tag value={room.topic} /> : null}
             {room.isHost ? <Tag value="Host" /> : null}
             {room.viewerRole === "moderator" ? <Tag value="Moderator" /> : null}
             {room.isMember ? <Tag value="Joined" /> : null}
-            {room.isMember && !isRoomEnded ? (
-              <button
-                className="flex h-8 items-center justify-center gap-1 rounded-md border border-[#cbd4c6] bg-white px-2 text-xs font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
-                onClick={() => {
-                  minimizeRoom();
-                  router.push("/");
-                }}
-                type="button"
-              >
-                <ChevronDown size={14} />
-                Minimize
-              </button>
-            ) : null}
           </div>
         </header>
 

@@ -50,7 +50,7 @@ const roomTypeOptions = [
 
 export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) {
   const router = useRouter();
-  const { activeRoom, registerActiveRoom } = useActiveVoiceRoom();
+  const { activeRoomId, registerActiveRoom } = useActiveVoiceRoom();
   const [rooms, setRooms] = useState(initialRooms);
   const [roomsStatus, setRoomsStatus] = useState<"ready" | "refreshing">(
     "ready",
@@ -154,7 +154,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function createRoom() {
-    if (activeRoom) {
+    if (activeRoomId) {
       setError("Leave your current voice room before creating another one.");
       return;
     }
@@ -162,6 +162,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
     setPendingAction("create");
     setError("");
     setMessage("");
+    const roomTitle = form.title.trim() || "Open Voice Room";
 
     try {
       const response = await fetch("/api/voice/rooms", {
@@ -173,7 +174,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
           scheduledAt: form.scheduledAt
             ? new Date(form.scheduledAt).toISOString()
             : null,
-          title: form.title,
+          title: roomTitle,
           topic: form.topic,
         }),
         headers: { "Content-Type": "application/json" },
@@ -205,7 +206,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function joinRoom(room: VoiceRoomSummary) {
-    if (activeRoom && activeRoom.id !== room.id) {
+    if (activeRoomId && activeRoomId !== room.id) {
       setError("Leave your current voice room before joining another one.");
       return;
     }
@@ -301,7 +302,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
             <div className="mt-4 space-y-3">
               <label className="block">
                 <span className="text-sm font-semibold text-[#34443a]">
-                  Title
+                  Title <span className="text-[#607265]">(optional)</span>
                 </span>
                 <input
                   className="mt-2 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
@@ -312,6 +313,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
                       title: event.target.value,
                     }))
                   }
+                  placeholder="Open Voice Room"
                   value={form.title}
                 />
               </label>
@@ -388,7 +390,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
               </label>
               <button
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                disabled={pendingAction === "create" || !form.title.trim()}
+                disabled={pendingAction === "create"}
                 onClick={createRoom}
                 type="button"
               >

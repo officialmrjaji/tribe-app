@@ -45,4 +45,44 @@ describe("voice integration contract", () => {
     assert.match(migration, /voice_room_message_reports/);
     assert.match(migration, /revoke all on public\.voice_room_messages/);
   });
+
+  it("keeps Voice Rooms creatable and circular mini-room UX shell-mounted", () => {
+    const navigationFrame = readFileSync(
+      "src/components/navigation/navigation-frame.tsx",
+      "utf8",
+    );
+    const provider = readFileSync(
+      "src/components/voice/active-voice-room-provider.tsx",
+      "utf8",
+    );
+    const roomClient = readFileSync(
+      "src/app/voice/rooms/[roomId]/voice-room-client.tsx",
+      "utf8",
+    );
+    const voiceHome = readFileSync("src/app/voice/voice-home-client.tsx", "utf8");
+
+    assert.match(navigationFrame, /ActiveVoiceRoomProvider/);
+    assert.match(provider, /chatUnreadCount/);
+    assert.match(provider, /snapToEdge/);
+    assert.match(provider, /onPointerMove/);
+    assert.match(provider, /rounded-full/);
+    assert.match(roomClient, /minimizeRoom/);
+    assert.match(roomClient, /RoomChatDrawer/);
+    assert.match(voiceHome, /Open Voice Room/);
+    assert.doesNotMatch(voiceHome, /!form\.title\.trim\(\)/);
+  });
+
+  it("keeps random voice match copy simplified without changing reveal flow", () => {
+    const sessionClient = readFileSync(
+      "src/app/voice/match/[sessionId]/voice-session-client.tsx",
+      "utf8",
+    );
+
+    assert.match(sessionClient, /Two minutes first, profiles reveal after\./);
+    assert.match(sessionClient, /language preferences/);
+    assert.match(sessionClient, /continueTalking/);
+    assert.match(sessionClient, /revealProfiles/);
+    assert.doesNotMatch(sessionClient, /Reveal rule/);
+    assert.doesNotMatch(sessionClient, /The profile stays hidden/);
+  });
 });
