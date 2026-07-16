@@ -13,6 +13,7 @@ import {
   MessageCircle,
   Mic,
   MicOff,
+  Minimize2,
   MoreVertical,
   Radio,
   ShieldAlert,
@@ -24,8 +25,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { useActiveVoiceRoom } from "@/components/voice/active-voice-room-provider";
 import { VoiceIntroPlayer } from "@/components/voice/voice-intro-player";
 import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type {
@@ -59,12 +62,21 @@ export default function VoiceRoomClient({
 }: {
   initialRoom: VoiceRoomSummary;
 }) {
+  const router = useRouter();
+  const {
+    clearActiveRoom,
+    isMinimized,
+    isMuted,
+    minimizeRoom,
+    registerActiveRoom,
+    setActiveRoom,
+    toggleMute: toggleActiveRoomMute,
+  } = useActiveVoiceRoom();
   const [room, setRoom] = useState(initialRoom);
   const [inviteCode, setInviteCode] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [isMuted, setIsMuted] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [showRoomInfo, setShowRoomInfo] = useState(false);
   const [selectedParticipant, setSelectedParticipant] =
@@ -78,6 +90,18 @@ export default function VoiceRoomClient({
   const canModerate = room.isHost || room.viewerRole === "moderator";
   const isRoomEnded = room.status === "closed" || room.status === "cancelled";
 
+  useEffect(() => {
+    if (room.isMember && !isRoomEnded) {
+      registerActiveRoom(room, {
+        minimized: isMinimized,
+      });
+    }
+
+    if (isRoomEnded || !room.isMember) {
+      clearActiveRoom();
+    }
+  }, [clearActiveRoom, isMinimized, isRoomEnded, registerActiveRoom, room]);
+
   const refreshRoom = useCallback(async () => {
     try {
       const response = await fetch(`/api/voice/rooms/${room.id}`, {
@@ -90,11 +114,21 @@ export default function VoiceRoomClient({
 
       if (response.ok && payload?.room) {
         setRoom(payload.room);
+
+        if (
+          payload.room.isMember &&
+          payload.room.status !== "closed" &&
+          payload.room.status !== "cancelled"
+        ) {
+          setActiveRoom(payload.room);
+        } else {
+          clearActiveRoom();
+        }
       }
     } catch {
       // Keep the current room snapshot. Realtime and fallback polling will retry.
     }
-  }, [room.id]);
+  }, [clearActiveRoom, room.id, setActiveRoom]);
 
   useRealtimeInvalidation({
     events: ["voice"],
@@ -126,7 +160,7 @@ export default function VoiceRoomClient({
 
   async function toggleMute() {
     if (!isMuted) {
-      setIsMuted(true);
+      toggleActiveRoomMute();
       setMessage("Muted.");
       return;
     }
@@ -142,7 +176,7 @@ export default function VoiceRoomClient({
       });
 
       stream.getTracks().forEach((track) => track.stop());
-      setIsMuted(false);
+      toggleActiveRoomMute();
       setMessage("Microphone is available.");
     } catch {
       setError("Microphone permission is needed before unmuting.");
@@ -173,6 +207,7 @@ export default function VoiceRoomClient({
       }
 
       setRoom(payload.room);
+      setActiveRoom(payload.room);
       setMessage("You joined the voice room.");
     } catch (joinError) {
       setError(
@@ -227,7 +262,10 @@ export default function VoiceRoomClient({
       setRoom(payload.room);
 
       if (action === "leave_room" || action === "end_room") {
+        clearActiveRoom();
         setMessage(action === "end_room" ? "Room ended." : "You left the room.");
+      } else {
+        setActiveRoom(payload.room);
       }
     } catch (actionError) {
       setError(
@@ -239,6 +277,11 @@ export default function VoiceRoomClient({
       setPendingAction(null);
       setMoreOpen(false);
     }
+  }
+
+  function minimizeActiveRoom() {
+    minimizeRoom();
+    router.push("/voice");
   }
 
   async function reportParticipant(participant: VoiceRoomParticipantSummary) {
@@ -325,7 +368,7 @@ export default function VoiceRoomClient({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7f1] px-4 pb-28 pt-6 text-[#17201b] sm:px-6 lg:px-10">
+    <main className="min-h-screen bg-[#f6f7f1] px-4 pb-56 pt-6 text-[#17201b] sm:px-6 lg:px-10 lg:pb-28">
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 border-b border-[#d8ded1] pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -353,6 +396,16 @@ export default function VoiceRoomClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {room.isMember && !isRoomEnded ? (
+              <button
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-[#cbd4c6] bg-white px-2 text-xs font-semibold text-[#34443a] transition hover:bg-[#f3f0e6]"
+                onClick={minimizeActiveRoom}
+                type="button"
+              >
+                <Minimize2 size={14} />
+                Minimize
+              </button>
+            ) : null}
             {room.isLocked ? <Tag value="Locked" /> : null}
             {room.topic ? <Tag value={room.topic} /> : null}
             {room.isHost ? <Tag value="Host" /> : null}
@@ -489,7 +542,7 @@ export default function VoiceRoomClient({
         />
       ) : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#d8ded1] bg-white/95 px-3 py-3 shadow-[0_-10px_30px_rgba(23,32,27,0.08)] backdrop-blur">
+      <div className="fixed inset-x-0 bottom-[76px] z-40 border-t border-[#d8ded1] bg-white/95 px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(23,32,27,0.08)] backdrop-blur lg:bottom-0">
         <div className="mx-auto grid max-w-4xl grid-cols-3 gap-2 sm:grid-cols-6">
           <ControlButton
             active={!isMuted}

@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { NotificationBadge } from "@/components/notifications/notification-badge";
+import { ActiveVoiceRoomProvider } from "@/components/voice/active-voice-room-provider";
 import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 
 type ConversationsPayload = {
@@ -84,12 +85,12 @@ export function NavigationFrame({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <ActiveVoiceRoomProvider>
       <PrimaryNavigation pathname={pathname} />
       <div className="min-h-screen pb-20 lg:pb-0 lg:pl-[236px]">
         {children}
       </div>
-    </>
+    </ActiveVoiceRoomProvider>
   );
 }
 

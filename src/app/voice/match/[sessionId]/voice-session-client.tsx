@@ -178,12 +178,11 @@ export default function VoiceSessionClient({
               Random voice match
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
-              Two minutes first, profile reveal after.
+              Two minutes first, profiles reveal after.
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#34443a]">
-              This session is matched by personality, interests, and language
-              signals. If both people want more time, you can extend the
-              voice-only session before profiles reveal. Video is not used.
+              This session matches people based on personality, interests, and
+              language preferences.
             </p>
           </div>
           <button
@@ -204,7 +203,7 @@ export default function VoiceSessionClient({
         {message ? <Notice message={message} tone="success" /> : null}
         {error ? <Notice message={error} tone="error" /> : null}
 
-        <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_300px]">
+        <section className="mt-6 space-y-5">
           <div className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <span className="flex h-14 w-14 items-center justify-center rounded-md bg-[#17251f] text-white">
@@ -216,17 +215,6 @@ export default function VoiceSessionClient({
                 </p>
                 <h2 className="mt-1 text-3xl font-semibold">{timerLabel}</h2>
               </div>
-            </div>
-            <div className="mt-5 rounded-md border border-[#e2e6dc] bg-[#fbfaf4] p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-                <Clock size={16} />
-                Reveal rule
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#34443a]">
-                Profiles reveal after the timer ends. Start with 2 minutes; if
-                both people tap Continue talking, the session can extend by up
-                to 5 extra minutes.
-              </p>
             </div>
             <div className="mt-5 rounded-md border border-[#e2e6dc] bg-white p-4">
               <p className="text-sm font-semibold text-[#607265]">
@@ -289,12 +277,12 @@ export default function VoiceSessionClient({
             </button>
           </div>
 
-          <aside className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
-            <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
-              <UserRound size={16} />
-              Profile reveal
-            </p>
-            {session.otherProfile ? (
+          {session.otherProfile ? (
+            <aside className="rounded-lg border border-[#d8ded1] bg-white p-5 shadow-sm">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#607265]">
+                <UserRound size={16} />
+                Matched profile
+              </p>
               <div className="mt-4">
                 <h2 className="text-xl font-semibold">
                   {session.otherProfile.name}
@@ -320,12 +308,8 @@ export default function VoiceSessionClient({
                   Open profile
                 </Link>
               </div>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-[#34443a]">
-                The profile stays hidden until the session is ready to reveal.
-              </p>
-            )}
-          </aside>
+            </aside>
+          ) : null}
         </section>
       </div>
     </main>
