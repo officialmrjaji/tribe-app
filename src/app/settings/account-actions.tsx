@@ -14,6 +14,7 @@ export function AccountActions() {
     setIsSigningOut(true);
 
     try {
+      window.dispatchEvent(new Event("tribe:sign-out"));
       await signOut({ redirectUrl: "/sign-in" });
     } catch {
       setIsSigningOut(false);

@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { SafeStorageImage } from "@/components/media/safe-storage-image";
+import { useActiveVoiceRoom } from "@/components/voice/active-voice-room-provider";
 import { useRealtimeInvalidation } from "@/lib/realtime/use-realtime-invalidation";
 import type { VoiceRoomSummary } from "@/lib/voice/service";
 
@@ -49,6 +50,7 @@ const roomTypeOptions = [
 
 export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) {
   const router = useRouter();
+  const { activeRoomId, registerActiveRoom } = useActiveVoiceRoom();
   const [rooms, setRooms] = useState(initialRooms);
   const [roomsStatus, setRoomsStatus] = useState<"ready" | "refreshing">(
     "ready",
@@ -152,9 +154,15 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function createRoom() {
+    if (activeRoomId) {
+      setError("Leave your current voice room before creating another one.");
+      return;
+    }
+
     setPendingAction("create");
     setError("");
     setMessage("");
+    const roomTitle = form.title.trim() || "Open Voice Room";
 
     try {
       const response = await fetch("/api/voice/rooms", {
@@ -166,7 +174,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
           scheduledAt: form.scheduledAt
             ? new Date(form.scheduledAt).toISOString()
             : null,
-          title: form.title,
+          title: roomTitle,
           topic: form.topic,
         }),
         headers: { "Content-Type": "application/json" },
@@ -183,6 +191,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
       }
 
       setRooms((currentRooms) => [payload.room as VoiceRoomSummary, ...currentRooms]);
+      registerActiveRoom(payload.room as VoiceRoomSummary);
       setMessage(`${payload.room.title} is ready.`);
       router.push(`/voice/rooms/${payload.room.id}`);
     } catch (roomError) {
@@ -197,6 +206,11 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
   }
 
   async function joinRoom(room: VoiceRoomSummary) {
+    if (activeRoomId && activeRoomId !== room.id) {
+      setError("Leave your current voice room before joining another one.");
+      return;
+    }
+
     setPendingAction("join");
     setError("");
     setMessage("");
@@ -217,6 +231,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
         throw new Error(getFailureMessage(payload, "Unable to join room."));
       }
 
+      registerActiveRoom(payload.room);
       router.push(`/voice/rooms/${room.id}`);
     } catch (joinError) {
       setError(
@@ -287,7 +302,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
             <div className="mt-4 space-y-3">
               <label className="block">
                 <span className="text-sm font-semibold text-[#34443a]">
-                  Title
+                  Title <span className="text-[#607265]">(optional)</span>
                 </span>
                 <input
                   className="mt-2 h-10 w-full rounded-md border border-[#cbd4c6] px-3 text-sm outline-none focus:border-[#17251f]"
@@ -298,6 +313,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
                       title: event.target.value,
                     }))
                   }
+                  placeholder="Open Voice Room"
                   value={form.title}
                 />
               </label>
@@ -374,7 +390,7 @@ export default function VoiceHomeClient({ initialRooms }: VoiceHomeClientProps) 
               </label>
               <button
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#17251f] px-4 text-sm font-semibold text-white transition hover:bg-[#253b32] disabled:opacity-60"
-                disabled={pendingAction === "create" || !form.title.trim()}
+                disabled={pendingAction === "create"}
                 onClick={createRoom}
                 type="button"
               >
